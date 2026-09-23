@@ -1,0 +1,53 @@
+# Codemagic CI/CD configuration for BMSTU neo (Subdirectory root)
+# Documentation: https://docs.codemagic.io/yaml-quick-start/
+
+workflows:
+  ios-release:
+    name: BMSTU neo iOS (TestFlight & App Store)
+    instance_type: mac_mini_m2
+    max_build_duration: 60
+    environment:
+      groups:
+        - app_store_credentials # Environment group containing:
+                                # APP_STORE_CONNECT_KEY_IDENTIFIER
+                                # APP_STORE_CONNECT_ISSUER_ID
+                                # APP_STORE_CONNECT_PRIVATE_KEY
+      flutter: stable
+      xcode: latest
+      cocoapods: default
+      vars:
+        BUNDLE_ID: "ru.bmstu.neo"
+        APP_STORE_APPLE_ID: 0 # Fill in Apple ID from App Store Connect once app is created
+
+    scripts:
+      - name: Set up code signing settings on Xcode project
+        script: |
+          xcode-project use-profiles
+
+      - name: Get Flutter packages
+        script: |
+          flutter packages pub get
+
+      - name: Run Flutter analyzer and unit tests
+        script: |
+          flutter analyze
+          flutter test
+
+      - name: Build Flutter iOS release IPA
+        script: |
+          flutter build ipa --release \
+            --build-name=1.0.0 \
+            --build-number=$BUILD_NUMBER \
+            --export-options-plist=/Users/builder/export_options.plist
+
+    artifacts:
+      - build/ios/ipa/*.ipa
+      - /tmp/xcodebuild_logs/*.log
+      - flutter_drive.log
+
+    publishing:
+      # Automatically upload to TestFlight
+      app_store_connect:
+        auth: integration
+        submit_to_testflight: true
+        expire_build_submitted_for_testing: false

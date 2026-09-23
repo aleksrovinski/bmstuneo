@@ -12,6 +12,9 @@ class AuthStorage {
       : _secureStorage = secureStorage ??
             const FlutterSecureStorage(
               aOptions: AndroidOptions(resetOnError: true),
+              iOptions: IOSOptions(
+                accessibility: KeychainAccessibility.first_unlock,
+              ),
             );
 
   Future<void> saveCredentials(String username, String password) async {

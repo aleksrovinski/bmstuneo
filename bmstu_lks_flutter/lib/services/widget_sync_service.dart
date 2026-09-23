@@ -12,8 +12,11 @@ class WidgetSyncService {
   static Future<void> updateScheduleWidget({
     required ScheduleProvider scheduleProvider,
   }) async {
-    // Only Android supports this native AppWidget
-    if (defaultTargetPlatform != TargetPlatform.android) return;
+    // Supports Android AppWidget and iOS WidgetKit
+    if (defaultTargetPlatform != TargetPlatform.android &&
+        defaultTargetPlatform != TargetPlatform.iOS) {
+      return;
+    }
 
     try {
       final group = scheduleProvider.currentGroupTitle.isNotEmpty
