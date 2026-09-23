@@ -1,5 +1,6 @@
 import WidgetKit
 import SwiftUI
+import ActivityKit
 
 // MARK: - Models
 struct SchedulePayload: Codable {
@@ -93,15 +94,24 @@ struct Provider: TimelineProvider {
 }
 
 // MARK: - Widget Views
+extension View {
+    @ViewBuilder
+    func applyWidgetBackground() -> some View {
+        let bg = Color(red: 0.04, green: 0.08, blue: 0.16)
+        if #available(iOS 17.0, *) {
+            self.containerBackground(bg, for: .widget)
+        } else {
+            self.background(bg)
+        }
+    }
+}
+
 struct ScheduleWidgetEntryView: View {
     var entry: Provider.Entry
     @Environment(\.widgetFamily) var family
 
     var body: some View {
-        ZStack {
-            Color(red: 0.04, green: 0.08, blue: 0.16) // Deep Navy Brand Dark
-                .ignoresSafeArea()
-
+        Group {
             if let sched = entry.schedule {
                 switch family {
                 case .systemSmall:
@@ -117,6 +127,7 @@ struct ScheduleWidgetEntryView: View {
                 EmptyStateView()
             }
         }
+        .applyWidgetBackground()
     }
 }
 
@@ -383,7 +394,6 @@ struct EmptyStateView: View {
 }
 
 // MARK: - Widget Configuration
-@main
 struct ScheduleWidget: Widget {
     let kind: String = "ScheduleWidget"
 
@@ -394,5 +404,110 @@ struct ScheduleWidget: Widget {
         .configurationDisplayName("Расписание пар МГТУ")
         .description("Текущая пара, аудитория и расписание занятий BMSTU neo.")
         .supportedFamilies([.systemSmall, .systemMedium, .systemLarge])
+    }
+}
+
+// MARK: - Live Activity Widget
+@available(iOS 16.1, *)
+struct ScheduleLiveActivity: Widget {
+    var body: some WidgetConfiguration {
+        ActivityConfiguration(for: ScheduleActivityAttributes.self) { context in
+            // Lock Screen banner
+            HStack(spacing: 12) {
+                VStack(alignment: .leading, spacing: 3) {
+                    HStack(spacing: 6) {
+                        Text(context.attributes.groupTitle)
+                            .font(.system(size: 13, weight: .bold))
+                            .foregroundColor(Color(red: 0.0, green: 0.82, blue: 1.0))
+                        if !context.state.timeRange.isEmpty {
+                            Text("•  \(context.state.timeRange)")
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundColor(.white.opacity(0.8))
+                        }
+                    }
+                    Text(context.state.currentLesson)
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundColor(.white)
+                        .lineLimit(1)
+                    if !context.state.statusSubline.isEmpty {
+                        Text(context.state.statusSubline)
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundColor(.white.opacity(0.6))
+                    }
+                }
+                Spacer()
+                if !context.state.room.isEmpty {
+                    Text(context.state.room)
+                        .font(.system(size: 12, weight: .heavy))
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(Color(red: 0.0, green: 0.44, blue: 0.95).opacity(0.4))
+                        .cornerRadius(8)
+                }
+            }
+            .padding(14)
+            .background(Color(red: 0.04, green: 0.08, blue: 0.16))
+        } dynamicIsland: { context in
+            DynamicIsland {
+                DynamicIslandExpandedRegion(.leading) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(context.attributes.groupTitle)
+                            .font(.system(size: 12, weight: .heavy))
+                            .foregroundColor(Color(red: 0.0, green: 0.82, blue: 1.0))
+                        Text(context.state.timeRange)
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundColor(.secondary)
+                    }
+                    .padding(.leading, 4)
+                }
+                DynamicIslandExpandedRegion(.trailing) {
+                    if !context.state.room.isEmpty {
+                        Text(context.state.room)
+                            .font(.system(size: 12, weight: .heavy))
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(Color.blue.opacity(0.3))
+                            .cornerRadius(6)
+                            .padding(.trailing, 4)
+                    }
+                }
+                DynamicIslandExpandedRegion(.bottom) {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(context.state.currentLesson)
+                            .font(.system(size: 13, weight: .semibold))
+                            .lineLimit(1)
+                        if !context.state.statusSubline.isEmpty {
+                            Text(context.state.statusSubline)
+                                .font(.system(size: 11, weight: .medium))
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                    .padding(.horizontal, 4)
+                }
+            } compactLeading: {
+                Text(context.state.room.isEmpty ? context.attributes.groupTitle : context.state.room)
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundColor(Color(red: 0.0, green: 0.82, blue: 1.0))
+            } compactTrailing: {
+                Text(context.state.timeRange.components(separatedBy: " - ").last ?? "")
+                    .font(.system(size: 11, weight: .semibold))
+            } minimal: {
+                Image(systemName: "graduationcap.fill")
+                    .font(.system(size: 11))
+                    .foregroundColor(Color(red: 0.0, green: 0.82, blue: 1.0))
+            }
+        }
+    }
+}
+
+// MARK: - Widget Bundle
+@main
+struct ScheduleWidgetBundle: WidgetBundle {
+    var body: some Widget {
+        ScheduleWidget()
+        if #available(iOS 16.1, *) {
+            ScheduleLiveActivity()
+        }
     }
 }

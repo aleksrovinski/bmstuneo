@@ -82,7 +82,7 @@ class WidgetSyncService {
         'enabled': notifEnabled,
       });
 
-      debugPrint('[WidgetSyncService] Android schedule widget and Live Activity updated successfully (${currentLessons.length} lessons, isTomorrow: $isTomorrow)');
+      debugPrint('[WidgetSyncService] Schedule widget and Live Activity updated successfully (${currentLessons.length} lessons, isTomorrow: $isTomorrow)');
     } catch (e) {
       debugPrint('[WidgetSyncService] Error updating widget: $e');
     }
@@ -90,7 +90,10 @@ class WidgetSyncService {
 
   /// Checks if the Live Activity notification is enabled by user
   static Future<bool> isLiveNotificationEnabled() async {
-    if (defaultTargetPlatform != TargetPlatform.android) return false;
+    if (defaultTargetPlatform != TargetPlatform.android &&
+        defaultTargetPlatform != TargetPlatform.iOS) {
+      return false;
+    }
     try {
       final enabled = await _channel.invokeMethod<bool>('isLiveNotificationEnabled');
       return enabled ?? true;
@@ -99,9 +102,12 @@ class WidgetSyncService {
     }
   }
 
-  /// Checks whether Android has granted notification permission
+  /// Checks whether system notification permission is granted
   static Future<bool> hasNotificationPermission() async {
-    if (defaultTargetPlatform != TargetPlatform.android) return true;
+    if (defaultTargetPlatform != TargetPlatform.android &&
+        defaultTargetPlatform != TargetPlatform.iOS) {
+      return true;
+    }
     try {
       final granted = await _channel.invokeMethod<bool>('hasNotificationPermission');
       return granted ?? true;
@@ -110,9 +116,12 @@ class WidgetSyncService {
     }
   }
 
-  /// Requests the system notification permission on Android 13+
+  /// Requests the system notification permission
   static Future<bool> requestNotificationPermission() async {
-    if (defaultTargetPlatform != TargetPlatform.android) return true;
+    if (defaultTargetPlatform != TargetPlatform.android &&
+        defaultTargetPlatform != TargetPlatform.iOS) {
+      return true;
+    }
     try {
       final granted = await _channel.invokeMethod<bool>('requestNotificationPermission');
       return granted ?? true;
@@ -123,7 +132,10 @@ class WidgetSyncService {
 
   /// Sets whether the Live Activity notification is enabled
   static Future<void> setLiveNotificationEnabled(bool enabled, {ScheduleProvider? scheduleProvider}) async {
-    if (defaultTargetPlatform != TargetPlatform.android) return;
+    if (defaultTargetPlatform != TargetPlatform.android &&
+        defaultTargetPlatform != TargetPlatform.iOS) {
+      return;
+    }
     try {
       if (enabled) {
         // Request runtime permission if not yet granted
