@@ -1,0 +1,58 @@
+[
+  {
+    "day": 1,
+    "time": 1,
+    "startTime": "08:30",
+    "endTime": "10:05",
+    "week": "all",
+    "discipline": {
+      "fullName": "Базы данных",
+      "shortName": "БД",
+      "actType": "lecture"
+    },
+    "audiences": [
+      {
+        "name": "501л",
+        "building": "УЛК",
+        "uuid": "aud-001"
+      }
+    ],
+    "teachers": [
+      {
+        "firstName": "Петр",
+        "lastName": "Петров",
+        "middleName": "Петрович",
+        "uuid": "teach-001"
+      }
+    ],
+    "stream": null
+  },
+  {
+    "day": 1,
+    "time": 2,
+    "startTime": "10:15",
+    "endTime": "11:50",
+    "week": "ch",
+    "discipline": {
+      "fullName": "Операционные системы",
+      "shortName": "ОС",
+      "actType": "seminar"
+    },
+    "audiences": [
+      {
+        "name": "323",
+        "building": "ГУК",
+        "uuid": "aud-002"
+      }
+    ],
+    "teachers": [
+      {
+        "firstName": "Сергей",
+        "lastName": "Сергеев",
+        "middleName": "Сергеевич",
+        "uuid": "teach-002"
+      }
+    ],
+    "stream": null
+  }
+]

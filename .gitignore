@@ -1,0 +1,92 @@
+# ==============================================================================
+# BMSTU Neo — Git Ignore Configuration
+# ==============================================================================
+
+# --- Sensitive Personal Data & Reverse-Engineering Fixtures ---
+# Prevents accidental leaks of student profiles, schedules, raw dumps and tokens
+compare_*.json
+*.ics
+*.html
+*.dump
+structure.json
+bmstu_groups_index.json
+main_bundle.js
+
+# --- Environment & Secret Credentials ---
+*.env
+*.env.*
+!*.env.example
+*.pem
+*.key
+*.p12
+
+# Android signing keys & configs
+key.properties
+**/*.keystore
+**/*.jks
+local.properties
+**/android/local.properties
+
+# iOS / macOS credentials & profiles
+*.mobileprovision
+**/xcuserdata/
+
+# --- Flutter & Dart Build Artifacts ---
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+.pub-cache/
+.pub/
+**/build/
+**/coverage/
+**/doc/api/
+**/.last_build_id
+.widget_preview/
+
+# Native ephemeral build caches
+**/Flutter/ephemeral/
+**/flutter/ephemeral/
+**/Pods/
+**/.symlinks/
+
+# Visual Studio / Windows build files
+**/windows/x64/
+**/windows/x86/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+*.[Cc]ache
+!*.[Cc]ache/
+
+# Symbolication & Obfuscation
+app.*.symbols
+app.*.map.json
+
+# --- Operating System Files ---
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+Desktop.ini
+
+# --- IDEs & Editors ---
+.idea/
+.vscode/
+*.iml
+*.ipr
+*.iws
+*.swp
+*~
+*.bak
+*.tmp
+
+# --- Logs ---
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*

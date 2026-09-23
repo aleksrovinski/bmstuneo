@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">BMSTU neo</string>
+    <string name="widget_name">BMSTU neo • Расписание</string>
+    <string name="widget_description">Виджет с расписанием на сегодня или завтра</string>
+</resources>

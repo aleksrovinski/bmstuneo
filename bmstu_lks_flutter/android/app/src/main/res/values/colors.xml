@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="widget_bg">#18181B</color>
+    <color name="widget_card_bg">#27272A</color>
+    <color name="widget_item_bg">#222226</color>
+    <color name="widget_primary">#0070F3</color>
+    <color name="widget_primary_variant">#2563EB</color>
+    <color name="widget_text_primary">#FFFFFF</color>
+    <color name="widget_text_secondary">#A1A1AA</color>
+    <color name="widget_text_muted">#71717A</color>
+    <color name="widget_divider">#333338</color>
+    <color name="widget_num_bg">#1E3A8A</color>
+    <color name="widget_denom_bg">#831843</color>
+    <color name="widget_chip_bg">#2D2D35</color>
+    <color name="widget_accent_green">#10B981</color>
+    <color name="widget_accent_amber">#F59E0B</color>
+</resources>

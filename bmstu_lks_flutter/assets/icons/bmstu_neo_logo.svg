@@ -1,0 +1,80 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <!-- Background Gradient -->
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#070E1E"/>
+      <stop offset="50%" stop-color="#002966"/>
+      <stop offset="100%" stop-color="#0052CC"/>
+    </linearGradient>
+
+    <!-- Neon Glow Gradient -->
+    <linearGradient id="neonGrad" x1="0%" y1="100%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#0070F3"/>
+      <stop offset="60%" stop-color="#00D2FF"/>
+      <stop offset="100%" stop-color="#00FFF0"/>
+    </linearGradient>
+
+    <!-- Bright White Accent Gradient -->
+    <linearGradient id="accentGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FFFFFF"/>
+      <stop offset="100%" stop-color="#99E6FF"/>
+    </linearGradient>
+
+    <!-- Inner Border Glow -->
+    <linearGradient id="borderGlow" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#00D2FF" stop-opacity="0.8"/>
+      <stop offset="50%" stop-color="#0070F3" stop-opacity="0.3"/>
+      <stop offset="100%" stop-color="#00F0FF" stop-opacity="0.9"/>
+    </linearGradient>
+
+    <!-- Soft Drop Shadow Filter -->
+    <filter id="glowShadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="16" result="blur"/>
+      <feComposite in="SourceGraphic" in2="blur" operator="over"/>
+    </filter>
+
+    <filter id="neonBlur" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="24" result="blur"/>
+    </filter>
+  </defs>
+
+  <!-- Background Base Squircle -->
+  <rect x="16" y="16" width="480" height="480" rx="108" fill="url(#bgGrad)"/>
+  <rect x="16" y="16" width="480" height="480" rx="108" fill="none" stroke="url(#borderGlow)" stroke-width="4"/>
+
+  <!-- Radial Glow Behind Emblem -->
+  <circle cx="256" cy="230" r="160" fill="#00D2FF" opacity="0.12" filter="url(#neonBlur)"/>
+
+  <!-- Subtle Tech Grid Lines / Geometric Accents -->
+  <path d="M 80 160 L 140 160 M 80 200 L 110 200" stroke="#00D2FF" stroke-width="3" stroke-linecap="round" opacity="0.35"/>
+  <path d="M 432 160 L 372 160 M 432 200 L 402 200" stroke="#00D2FF" stroke-width="3" stroke-linecap="round" opacity="0.35"/>
+  <circle cx="140" cy="160" r="4" fill="#00FFF0" opacity="0.6"/>
+  <circle cx="372" cy="160" r="4" fill="#00FFF0" opacity="0.6"/>
+
+  <!-- Stylized N & Rocket / Compass Monogram -->
+  <g filter="url(#glowShadow)">
+    <!-- Left Pillar of N -->
+    <path d="M 148 340 L 148 152 C 148 140 158 132 170 132 L 192 132 C 204 132 214 140 214 152 L 214 340 C 214 352 204 360 192 360 L 170 360 C 158 360 148 352 148 340 Z" fill="#0070F3"/>
+
+    <!-- Right Pillar of N -->
+    <path d="M 298 340 L 298 152 C 298 140 308 132 320 132 L 342 132 C 354 132 364 140 364 152 L 364 340 C 364 352 354 360 342 360 L 320 360 C 308 360 298 352 298 340 Z" fill="#0070F3"/>
+
+    <!-- Dynamic Diagonal Slash of N (Cyber Neon Rocket Path) -->
+    <path d="M 180 142 L 332 350 C 339 360 353 360 360 351 L 362 348 C 367 341 366 331 359 322 L 208 114 C 201 104 187 104 180 113 L 178 116 C 173 123 174 133 180 142 Z" fill="url(#neonGrad)"/>
+
+    <!-- Futuristic Rocket / Arrowhead Apex at center -->
+    <polygon points="256,76 294,142 218,142" fill="url(#accentGrad)" opacity="0.95"/>
+
+    <!-- Rocket Core Flame Accent -->
+    <polygon points="256,104 274,142 238,142" fill="#00FFF0"/>
+  </g>
+
+  <!-- BMSTU Text Label -->
+  <text x="256" y="408" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Inter', sans-serif" font-size="22" font-weight="900" fill="#FFFFFF" text-anchor="middle" letter-spacing="8" opacity="0.95">BMSTU</text>
+
+  <!-- Neo Cyber Badge -->
+  <g transform="translate(196, 426)">
+    <rect x="0" y="0" width="120" height="28" rx="14" fill="#00D2FF" fill-opacity="0.16" stroke="#00FFF0" stroke-width="1.5"/>
+    <text x="60" y="19" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Inter', sans-serif" font-size="13" font-weight="800" fill="#00FFF0" text-anchor="middle" letter-spacing="4">NEO</text>
+  </g>
+</svg>
