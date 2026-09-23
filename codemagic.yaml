@@ -23,6 +23,14 @@ workflows:
     scripts:
       - name: Set up code signing settings on Xcode project
         script: |
+          keychain initialize
+          app-store-connect fetch-signing-files "ru.bmstu.neo" \
+            --type IOS_APP_STORE \
+            --create
+          app-store-connect fetch-signing-files "ru.bmstu.neo.ScheduleWidget" \
+            --type IOS_APP_STORE \
+            --create
+          keychain add-certificates
           xcode-project use-profiles
 
       - name: Get Flutter packages
