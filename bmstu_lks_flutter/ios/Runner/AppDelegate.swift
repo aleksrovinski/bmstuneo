@@ -16,7 +16,9 @@ import WidgetKit
 
   func didInitializeImplicitFlutterEngine(_ engineBridge: FlutterImplicitEngineBridge) {
     GeneratedPluginRegistrant.register(with: engineBridge.pluginRegistry)
-    AppDelegate.registerWidgetChannel(with: engineBridge.pluginRegistry.registrar(forPlugin: "RuBmstuNeoWidgetPlugin"))
+    if let registrar = engineBridge.pluginRegistry.registrar(forPlugin: "RuBmstuNeoWidgetPlugin") {
+      AppDelegate.registerWidgetChannel(with: registrar)
+    }
   }
 
   static func registerWidgetChannel(with registrar: FlutterPluginRegistrar) {
