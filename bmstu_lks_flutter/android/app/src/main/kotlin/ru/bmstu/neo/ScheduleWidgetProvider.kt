@@ -264,32 +264,20 @@ class ScheduleWidgetProvider : AppWidgetProvider() {
                 val cal = Calendar.getInstance()
                 val currentMinutes = cal.get(Calendar.HOUR_OF_DAY) * 60 + cal.get(Calendar.MINUTE)
 
-                var nextTriggerMinutes: Int? = null
-
+                var hasActiveOrUpcoming = false
                 for (i in 0 until lessons.length()) {
                     val l = lessons.optJSONObject(i) ?: continue
-                    val startMin = parseTimeToMinutes(l.optString("startTime", ""))
                     val endMin = parseTimeToMinutes(l.optString("endTime", ""))
-
-                    if (startMin != null && startMin > currentMinutes) {
-                        if (nextTriggerMinutes == null || startMin < nextTriggerMinutes) {
-                            nextTriggerMinutes = startMin
-                        }
-                    }
                     if (endMin != null && endMin > currentMinutes) {
-                        if (nextTriggerMinutes == null || endMin < nextTriggerMinutes) {
-                            nextTriggerMinutes = endMin
-                        }
+                        hasActiveOrUpcoming = true
+                        break
                     }
                 }
 
-                if (nextTriggerMinutes != null) {
-                    val targetCal = Calendar.getInstance().apply {
-                        set(Calendar.HOUR_OF_DAY, nextTriggerMinutes / 60)
-                        set(Calendar.MINUTE, nextTriggerMinutes % 60)
-                        set(Calendar.SECOND, 2)
-                        set(Calendar.MILLISECOND, 0)
-                    }
+                if (hasActiveOrUpcoming) {
+                    val now = System.currentTimeMillis()
+                    // Schedule for next minute start + 200ms
+                    val nextMinuteMs = ((now / 60000L) + 1) * 60000L + 200L
 
                     val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as? AlarmManager
                     val intent = Intent(context, ScheduleWidgetProvider::class.java).apply {
@@ -301,7 +289,13 @@ class ScheduleWidgetProvider : AppWidgetProvider() {
                         intent,
                         PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
                     )
-                    alarmManager?.set(AlarmManager.RTC, targetCal.timeInMillis, pendingIntent)
+                    if (alarmManager != null) {
+                        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
+                            alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC, nextMinuteMs, pendingIntent)
+                        } else {
+                            alarmManager.set(AlarmManager.RTC, nextMinuteMs, pendingIntent)
+                        }
+                    }
                 }
             } catch (_: Exception) {}
         }

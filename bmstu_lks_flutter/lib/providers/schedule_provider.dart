@@ -222,7 +222,7 @@ class ScheduleProvider with ChangeNotifier {
   // Filter lessons for today
   List<ScheduleLesson> get lessonsForToday {
     final now = DateTime.now();
-    if (now.weekday < 1 || now.weekday > 6) return [];
+    if (now.weekday < 1 || now.weekday > 7) return [];
     return getLessonsForDay(now.weekday, 'current');
   }
 
@@ -240,11 +240,15 @@ class ScheduleProvider with ChangeNotifier {
 
   // Filter lessons for tomorrow
   List<ScheduleLesson> get lessonsForTomorrow {
-    if (tomorrowWeekday < 1 || tomorrowWeekday > 6) return [];
+    if (tomorrowWeekday < 1 || tomorrowWeekday > 7) return [];
     final dayLessons = allLessons.where((l) => l.day == tomorrowWeekday).toList();
     final isNum = isTomorrowNumerator;
     final filtered = dayLessons.where((l) => l.matchesWeek(isNumeratorWeek: isNum)).toList();
-    filtered.sort((a, b) => a.time.compareTo(b.time));
+    filtered.sort((a, b) {
+      final timeCmp = a.startTime.compareTo(b.startTime);
+      if (timeCmp != 0) return timeCmp;
+      return a.time.compareTo(b.time);
+    });
     return filtered;
   }
 
@@ -264,7 +268,11 @@ class ScheduleProvider with ChangeNotifier {
       filtered = dayLessons.where((l) => l.matchesWeek(isNumeratorWeek: isNum)).toList();
     }
 
-    filtered.sort((a, b) => a.time.compareTo(b.time));
+    filtered.sort((a, b) {
+      final timeCmp = a.startTime.compareTo(b.startTime);
+      if (timeCmp != 0) return timeCmp;
+      return a.time.compareTo(b.time);
+    });
     return filtered;
   }
 
@@ -384,12 +392,16 @@ class ScheduleProvider with ChangeNotifier {
     for (int offset = 1; offset <= 14; offset++) {
       final checkDate = now.add(Duration(days: offset));
       final checkWeekday = checkDate.weekday;
-      if (checkWeekday >= 1 && checkWeekday <= 6) {
+      if (checkWeekday >= 1 && checkWeekday <= 7) {
         final isCheckNumerator = isDateNumerator(checkDate);
-        final dayLessons = _lessons
+        final dayLessons = allLessons
             .where((l) => l.day == checkWeekday && l.matchesWeek(isNumeratorWeek: isCheckNumerator))
             .toList();
-        dayLessons.sort((a, b) => a.time.compareTo(b.time));
+        dayLessons.sort((a, b) {
+          final timeCmp = a.startTime.compareTo(b.startTime);
+          if (timeCmp != 0) return timeCmp;
+          return a.time.compareTo(b.time);
+        });
 
         if (dayLessons.isNotEmpty) {
           final nextLesson = dayLessons.first;

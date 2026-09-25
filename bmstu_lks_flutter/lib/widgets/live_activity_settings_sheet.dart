@@ -110,7 +110,7 @@ class _LiveActivitySettingsSheetState extends State<LiveActivitySettingsSheet> {
               Icon(Icons.notifications_active_rounded, color: theme.colorScheme.primary, size: 26),
               const SizedBox(width: 12),
               Text(
-                'Live Activity и виджет',
+                'Live Updates и виджет',
                 style: TextStyle(
                   fontSize: 18,
                   fontWeight: FontWeight.w800,
@@ -121,7 +121,7 @@ class _LiveActivitySettingsSheetState extends State<LiveActivitySettingsSheet> {
           ),
           const SizedBox(height: 16),
 
-          // Live Activity Switch Card
+          // Live Updates Switch Card
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             decoration: BoxDecoration(
@@ -136,7 +136,7 @@ class _LiveActivitySettingsSheetState extends State<LiveActivitySettingsSheet> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'Live Activity в шторке',
+                        'Live Updates (Живое расписание)',
                         style: TextStyle(
                           fontSize: 15,
                           fontWeight: FontWeight.w700,
@@ -145,7 +145,7 @@ class _LiveActivitySettingsSheetState extends State<LiveActivitySettingsSheet> {
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        'Закрепленное системное уведомление с текущей и следующей парой. Появляется только в учебные дни.',
+                        'Шкала прогресса пары, таймер обратного отсчёта и статусная карточка на экране блокировки. Появляется только в дни пар.',
                         style: TextStyle(
                           fontSize: 12,
                           color: theme.colorScheme.onSurfaceVariant,

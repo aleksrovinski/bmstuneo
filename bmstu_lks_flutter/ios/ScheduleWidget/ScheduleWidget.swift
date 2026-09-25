@@ -27,6 +27,49 @@ struct LessonPayload: Codable, Identifiable {
 struct SimpleEntry: TimelineEntry {
     let date: Date
     let schedule: SchedulePayload?
+    let activeLesson: LessonPayload?
+    let nextLesson: LessonPayload?
+    let targetCountdownDate: Date?
+    let isLessonActive: Bool
+    let statusBadgeText: String
+}
+
+// MARK: - Helper Functions
+func parseTimeToMinutes(_ timeStr: String) -> Int? {
+    let parts = timeStr.trimmingCharacters(in: .whitespaces).components(separatedBy: ":")
+    guard parts.count >= 2,
+          let h = Int(parts[0]),
+          let m = Int(parts[1]) else { return nil }
+    return h * 60 + m
+}
+
+func typeColor(_ type: String) -> Color {
+    let t = type.lowercased()
+    if t.contains("лек") {
+        return Color(red: 0.0, green: 0.82, blue: 1.0)
+    } else if t.contains("лаб") {
+        return Color(red: 1.0, green: 0.58, blue: 0.0)
+    } else if t.contains("сем") || t.contains("прак") {
+        return Color(red: 0.35, green: 0.85, blue: 0.45)
+    }
+    return Color(red: 0.0, green: 0.82, blue: 1.0)
+}
+
+func displayLessons(allLessons: [LessonPayload], activeLesson: LessonPayload?, currentMinutes: Int, maxCount: Int = 2) -> [LessonPayload] {
+    if let active = activeLesson, let activeIdx = allLessons.firstIndex(where: { $0.id == active.id }) {
+        return Array(allLessons.dropFirst(activeIdx).prefix(maxCount))
+    }
+    
+    let upcoming = allLessons.filter { lesson in
+        guard let eStr = lesson.endTime, let eMin = parseTimeToMinutes(eStr) else { return true }
+        return eMin > currentMinutes
+    }
+    
+    if !upcoming.isEmpty {
+        return Array(upcoming.prefix(maxCount))
+    }
+    
+    return Array(allLessons.suffix(maxCount))
 }
 
 // MARK: - Timeline Provider
@@ -35,21 +78,144 @@ struct Provider: TimelineProvider {
     private let scheduleKey = "schedule_data"
 
     func placeholder(in context: Context) -> SimpleEntry {
-        SimpleEntry(date: Date(), schedule: getSampleSchedule())
+        let sample = getSampleSchedule()
+        return SimpleEntry(
+            date: Date(),
+            schedule: sample,
+            activeLesson: sample.lessons?.first,
+            nextLesson: sample.lessons?.last,
+            targetCountdownDate: Calendar.current.date(byAdding: .minute, value: 35, to: Date()),
+            isLessonActive: true,
+            statusBadgeText: "Идёт пара"
+        )
     }
 
     func getSnapshot(in context: Context, completion: @escaping (SimpleEntry) -> Void) {
-        let entry = SimpleEntry(date: Date(), schedule: loadSchedule() ?? getSampleSchedule())
+        let sched = loadSchedule() ?? getSampleSchedule()
+        let entry = buildEntry(date: Date(), schedule: sched)
         completion(entry)
     }
 
     func getTimeline(in context: Context, completion: @escaping (Timeline<SimpleEntry>) -> Void) {
         let currentSchedule = loadSchedule()
         let currentDate = Date()
+        var entries: [SimpleEntry] = []
+
+        // Current entry
+        entries.append(buildEntry(date: currentDate, schedule: currentSchedule))
+
+        if let schedule = currentSchedule,
+           let lessons = schedule.lessons,
+           !lessons.isEmpty,
+           schedule.isTomorrow != true {
+            let cal = Calendar.current
+            var boundaryMinutes: Set<Int> = []
+
+            for lesson in lessons {
+                if let sStr = lesson.startTime, let sMin = parseTimeToMinutes(sStr) {
+                    boundaryMinutes.insert(sMin)
+                }
+                if let eStr = lesson.endTime, let eMin = parseTimeToMinutes(eStr) {
+                    boundaryMinutes.insert(eMin)
+                }
+            }
+
+            let sortedMinutes = boundaryMinutes.sorted()
+            let curH = cal.component(.hour, from: currentDate)
+            let curM = cal.component(.minute, from: currentDate)
+            let currentTotalM = curH * 60 + curM
+
+            for m in sortedMinutes where m > currentTotalM {
+                if let tDate = cal.date(bySettingHour: m / 60, minute: m % 60, second: 0, of: currentDate) {
+                    entries.append(buildEntry(date: tDate, schedule: currentSchedule))
+                }
+            }
+        }
+
         let refreshDate = Calendar.current.date(byAdding: .minute, value: 15, to: currentDate) ?? currentDate.addingTimeInterval(900)
-        let entry = SimpleEntry(date: currentDate, schedule: currentSchedule)
-        let timeline = Timeline(entries: [entry], policy: .after(refreshDate))
+        let timeline = Timeline(entries: entries, policy: .after(refreshDate))
         completion(timeline)
+    }
+
+    private func buildEntry(date: Date, schedule: SchedulePayload?) -> SimpleEntry {
+        guard let schedule = schedule,
+              let lessons = schedule.lessons,
+              !lessons.isEmpty,
+              schedule.isTomorrow != true else {
+            let isTom = schedule?.isTomorrow ?? false
+            let badge = isTom ? "Завтра" : (schedule?.lessons?.isEmpty == false ? "Расписание" : "Пар нет")
+            return SimpleEntry(
+                date: date,
+                schedule: schedule,
+                activeLesson: nil,
+                nextLesson: schedule?.lessons?.first,
+                targetCountdownDate: nil,
+                isLessonActive: false,
+                statusBadgeText: badge
+            )
+        }
+
+        let cal = Calendar.current
+        let curH = cal.component(.hour, from: date)
+        let curM = cal.component(.minute, from: date)
+        let currentMinutes = curH * 60 + curM
+
+        var activeLesson: LessonPayload? = nil
+        var nextLesson: LessonPayload? = nil
+        var activeEndTime: Date? = nil
+        var nextStartTime: Date? = nil
+
+        for lesson in lessons {
+            guard let sStr = lesson.startTime, let eStr = lesson.endTime,
+                  let sMin = parseTimeToMinutes(sStr),
+                  let eMin = parseTimeToMinutes(eStr) else { continue }
+
+            let sDate = cal.date(bySettingHour: sMin / 60, minute: sMin % 60, second: 0, of: date)
+            let eDate = cal.date(bySettingHour: eMin / 60, minute: eMin % 60, second: 0, of: date)
+
+            if currentMinutes >= sMin && currentMinutes < eMin {
+                activeLesson = lesson
+                activeEndTime = eDate
+                break
+            } else if currentMinutes < sMin && nextLesson == nil {
+                nextLesson = lesson
+                nextStartTime = sDate
+            }
+        }
+
+        if let active = activeLesson {
+            return SimpleEntry(
+                date: date,
+                schedule: schedule,
+                activeLesson: active,
+                nextLesson: nextLesson,
+                targetCountdownDate: activeEndTime,
+                isLessonActive: true,
+                statusBadgeText: "Идёт пара"
+            )
+        } else if let next = nextLesson {
+            let firstSMin = parseTimeToMinutes(lessons.first?.startTime ?? "") ?? 0
+            let isBreak = currentMinutes >= firstSMin
+            return SimpleEntry(
+                date: date,
+                schedule: schedule,
+                activeLesson: nil,
+                nextLesson: next,
+                targetCountdownDate: nextStartTime,
+                isLessonActive: false,
+                statusBadgeText: isBreak ? "Перемена" : "До начала"
+            )
+        } else {
+            return SimpleEntry(
+                date: date,
+                schedule: schedule,
+                activeLesson: nil,
+                nextLesson: nil,
+                targetCountdownDate: nil,
+                isLessonActive: false,
+                statusBadgeText: "Пары завершены"
+            )
+        }
     }
 
     private func loadSchedule() -> SchedulePayload? {
@@ -115,13 +281,13 @@ struct ScheduleWidgetEntryView: View {
             if let sched = entry.schedule {
                 switch family {
                 case .systemSmall:
-                    SmallWidgetView(sched: sched)
+                    SmallWidgetView(entry: entry, sched: sched)
                 case .systemMedium:
-                    MediumWidgetView(sched: sched)
+                    MediumWidgetView(entry: entry, sched: sched)
                 case .systemLarge:
-                    LargeWidgetView(sched: sched)
+                    LargeWidgetView(entry: entry, sched: sched)
                 default:
-                    MediumWidgetView(sched: sched)
+                    MediumWidgetView(entry: entry, sched: sched)
                 }
             } else {
                 EmptyStateView()
@@ -133,230 +299,293 @@ struct ScheduleWidgetEntryView: View {
 
 // MARK: - Small Widget (1x1)
 struct SmallWidgetView: View {
+    let entry: SimpleEntry
     let sched: SchedulePayload
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 5) {
             HStack {
                 Text(sched.groupTitle ?? "МГТУ")
-                    .font(.system(size: 13, weight: .bold))
+                    .font(.system(size: 12, weight: .heavy))
                     .foregroundColor(Color(red: 0.0, green: 0.82, blue: 1.0))
                 Spacer()
-                Text(sched.weekParity ?? "")
-                    .font(.system(size: 9, weight: .semibold))
-                    .foregroundColor(.white.opacity(0.7))
+                if let parity = sched.weekParity, !parity.isEmpty {
+                    Text(parity.prefix(4))
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundColor(.white.opacity(0.6))
+                }
             }
 
-            if let headline = sched.statusHeadline, !headline.isEmpty {
-                Text(headline)
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundColor(.white)
-                    .lineLimit(2)
+            HStack(spacing: 3) {
+                Circle()
+                    .fill(entry.isLessonActive ? Color.green : Color(red: 0.0, green: 0.82, blue: 1.0))
+                    .frame(width: 5, height: 5)
+                Text(entry.statusBadgeText)
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundColor(.white.opacity(0.9))
+                if let target = entry.targetCountdownDate {
+                    Text(target, style: .relative)
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundColor(Color(red: 0.0, green: 0.82, blue: 1.0))
+                }
             }
 
             Divider().background(Color.white.opacity(0.15))
 
-            if let firstLesson = sched.lessons?.first {
+            let displayLesson = entry.activeLesson ?? entry.nextLesson ?? sched.lessons?.first
+            if let lesson = displayLesson {
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(firstLesson.disciplineTitle ?? "")
-                        .font(.system(size: 12, weight: .bold))
-                        .foregroundColor(.white)
-                        .lineLimit(2)
-
                     HStack(spacing: 4) {
-                        Text(firstLesson.time ?? "")
-                            .font(.system(size: 10, weight: .medium))
+                        Text(lesson.time ?? "")
+                            .font(.system(size: 10, weight: .bold))
                             .foregroundColor(Color(red: 0.0, green: 0.82, blue: 1.0))
                         Spacer()
-                        if let room = firstLesson.room, !room.isEmpty {
+                        if let room = lesson.room, !room.isEmpty && room != "—" {
                             Text(room)
-                                .font(.system(size: 10, weight: .bold))
-                                .padding(.horizontal, 4)
-                                .padding(.vertical, 1)
+                                .font(.system(size: 9, weight: .bold))
+                                .padding(.horizontal, 5)
+                                .padding(.vertical, 1.5)
                                 .background(Color.white.opacity(0.15))
                                 .cornerRadius(4)
                                 .foregroundColor(.white)
                         }
                     }
+
+                    Text(lesson.disciplineTitle ?? "")
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundColor(.white)
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    if let type = lesson.type, !type.isEmpty {
+                        Text(type)
+                            .font(.system(size: 9, weight: .medium))
+                            .padding(.horizontal, 4)
+                            .padding(.vertical, 1)
+                            .background(typeColor(type).opacity(0.2))
+                            .foregroundColor(typeColor(type))
+                            .cornerRadius(3)
+                    }
                 }
             } else {
-                Text("Занятий нет")
-                    .font(.system(size: 12, weight: .medium))
+                Spacer()
+                Text(sched.isTomorrow == true ? "На завтра пар нет ✨" : "На сегодня пар нет ✨")
+                    .font(.system(size: 11, weight: .medium))
                     .foregroundColor(.white.opacity(0.6))
+                Spacer()
             }
             Spacer()
+        }
+        .padding(11)
+    }
+}
+
+// MARK: - Medium Widget (2x1) - Compact High Density
+struct MediumWidgetView: View {
+    let entry: SimpleEntry
+    let sched: SchedulePayload
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            // Header Row: Single compact horizontal line
+            HStack(alignment: .center) {
+                HStack(spacing: 5) {
+                    Text(sched.groupTitle ?? "МГТУ")
+                        .font(.system(size: 13, weight: .heavy))
+                        .foregroundColor(Color(red: 0.0, green: 0.82, blue: 1.0))
+
+                    Text("•")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundColor(.white.opacity(0.35))
+
+                    Text(sched.dayTitle ?? "Сегодня")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundColor(.white.opacity(0.85))
+
+                    if let parity = sched.weekParity, !parity.isEmpty {
+                        Text("(\(parity.prefix(4)))")
+                            .font(.system(size: 10, weight: .medium))
+                            .foregroundColor(.white.opacity(0.5))
+                    }
+                }
+
+                Spacer()
+
+                // Compact Status Badge with Live Countdown
+                HStack(spacing: 4) {
+                    Circle()
+                        .fill(entry.isLessonActive ? Color.green : Color(red: 0.0, green: 0.82, blue: 1.0))
+                        .frame(width: 6, height: 6)
+
+                    Text(entry.statusBadgeText)
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundColor(.white)
+
+                    if let target = entry.targetCountdownDate {
+                        Text(target, style: .relative)
+                            .font(.system(size: 10, weight: .bold))
+                            .foregroundColor(Color(red: 0.0, green: 0.82, blue: 1.0))
+                    }
+                }
+                .padding(.horizontal, 6)
+                .padding(.vertical, 2.5)
+                .background(Color.white.opacity(0.08))
+                .cornerRadius(5)
+            }
+
+            Divider().background(Color.white.opacity(0.12))
+
+            // Full-width Lessons List
+            if let lessons = sched.lessons, !lessons.isEmpty {
+                let cal = Calendar.current
+                let curM = cal.component(.hour, from: entry.date) * 60 + cal.component(.minute, from: entry.date)
+                let visibleLessons = sched.isTomorrow == true
+                    ? Array(lessons.prefix(2))
+                    : displayLessons(allLessons: lessons, activeLesson: entry.activeLesson, currentMinutes: curM, maxCount: 2)
+
+                VStack(spacing: 5) {
+                    ForEach(Array(visibleLessons.enumerated()), id: \.offset) { index, lesson in
+                        let isActive = entry.isLessonActive && entry.activeLesson?.id == lesson.id
+                        MediumLessonRow(lesson: lesson, isActive: isActive)
+
+                        if index == 0 && visibleLessons.count > 1 {
+                            Divider().background(Color.white.opacity(0.06))
+                        }
+                    }
+                }
+            } else {
+                Spacer()
+                CenterTextView(text: sched.isTomorrow == true ? "На завтра пар нет ✨" : "На сегодня пар нет ✨")
+                Spacer()
+            }
         }
         .padding(12)
     }
 }
 
-// MARK: - Medium Widget (2x1)
-struct MediumWidgetView: View {
-    let sched: SchedulePayload
+// MARK: - Medium Lesson Row
+struct MediumLessonRow: View {
+    let lesson: LessonPayload
+    let isActive: Bool
 
     var body: some View {
-        HStack(spacing: 12) {
-            // Left Column: Group & Status
-            VStack(alignment: .leading, spacing: 6) {
-                HStack(spacing: 4) {
-                    Circle()
-                        .fill(Color(red: 0.0, green: 0.82, blue: 1.0))
-                        .frame(width: 8, height: 8)
-                    Text(sched.groupTitle ?? "МГТУ")
-                        .font(.system(size: 14, weight: .heavy))
-                        .foregroundColor(Color(red: 0.0, green: 0.82, blue: 1.0))
-                }
+        HStack(alignment: .center, spacing: 8) {
+            RoundedRectangle(cornerRadius: 1.5)
+                .fill(isActive ? Color(red: 0.0, green: 0.82, blue: 1.0) : Color.white.opacity(0.15))
+                .frame(width: 3, height: 26)
 
-                Text(sched.dayTitle ?? "Сегодня")
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundColor(.white.opacity(0.7))
+            Text(lesson.time ?? "")
+                .font(.system(size: 11, weight: isActive ? .bold : .medium))
+                .foregroundColor(isActive ? Color(red: 0.0, green: 0.82, blue: 1.0) : .white.opacity(0.85))
+                .frame(width: 78, alignment: .leading)
 
-                if let headline = sched.statusHeadline {
-                    Text(headline)
-                        .font(.system(size: 12, weight: .bold))
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 5) {
+                    Text(lesson.disciplineTitle ?? "")
+                        .font(.system(size: 12, weight: isActive ? .bold : .semibold))
                         .foregroundColor(.white)
-                        .lineLimit(2)
-                }
+                        .lineLimit(1)
 
-                if let subline = sched.statusSubline, !subline.isEmpty {
-                    Text(subline)
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundColor(.white.opacity(0.6))
-                }
-
-                Spacer()
-                Text(sched.weekParity ?? "")
-                    .font(.system(size: 9, weight: .bold))
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
-                    .background(Color.white.opacity(0.1))
-                    .cornerRadius(4)
-                    .foregroundColor(.white.opacity(0.8))
-            }
-            .frame(maxWidth: 130)
-
-            Divider().background(Color.white.opacity(0.15))
-
-            // Right Column: Upcoming Lessons
-            VStack(alignment: .leading, spacing: 6) {
-                if let lessons = sched.lessons, !lessons.isEmpty {
-                    ForEach(lessons.prefix(2)) { lesson in
-                        VStack(alignment: .leading, spacing: 2) {
-                            HStack {
-                                Text(lesson.time ?? "")
-                                    .font(.system(size: 10, weight: .bold))
-                                    .foregroundColor(Color(red: 0.0, green: 0.82, blue: 1.0))
-                                Spacer()
-                                if let room = lesson.room, !room.isEmpty {
-                                    Text(room)
-                                        .font(.system(size: 9, weight: .bold))
-                                        .padding(.horizontal, 4)
-                                        .padding(.vertical, 1)
-                                        .background(Color.white.opacity(0.15))
-                                        .cornerRadius(4)
-                                        .foregroundColor(.white)
-                                }
-                            }
-                            Text(lesson.disciplineTitle ?? "")
-                                .font(.system(size: 11, weight: .semibold))
-                                .foregroundColor(.white)
-                                .lineLimit(1)
-                        }
-                        if lesson.id != lessons.prefix(2).last?.id {
-                            Divider().background(Color.white.opacity(0.1))
-                        }
+                    if let type = lesson.type, !type.isEmpty {
+                        Text(type)
+                            .font(.system(size: 9, weight: .bold))
+                            .padding(.horizontal, 4)
+                            .padding(.vertical, 1)
+                            .background(typeColor(type).opacity(0.2))
+                            .foregroundColor(typeColor(type))
+                            .cornerRadius(3)
                     }
-                } else {
-                    Spacer()
-                    Text("На этот день пар нет")
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundColor(.white.opacity(0.6))
-                    Spacer()
                 }
+
+                if let teacher = lesson.teacher, !teacher.isEmpty && teacher != "Кафедра" {
+                    Text(teacher)
+                        .font(.system(size: 10, weight: .regular))
+                        .foregroundColor(.white.opacity(0.5))
+                        .lineLimit(1)
+                }
+            }
+
+            Spacer(minLength: 4)
+
+            if let room = lesson.room, !room.isEmpty && room != "—" {
+                Text(room)
+                    .font(.system(size: 11, weight: .bold))
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 3)
+                    .background(isActive ? Color(red: 0.0, green: 0.44, blue: 0.95).opacity(0.6) : Color.white.opacity(0.12))
+                    .foregroundColor(isActive ? .white : .white.opacity(0.9))
+                    .cornerRadius(6)
             }
         }
-        .padding(14)
     }
 }
 
 // MARK: - Large Widget (2x2)
 struct LargeWidgetView: View {
+    let entry: SimpleEntry
     let sched: SchedulePayload
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            // Header
-            HStack {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .center) {
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(spacing: 6) {
                         Text(sched.groupTitle ?? "МГТУ")
                             .font(.system(size: 16, weight: .heavy))
                             .foregroundColor(Color(red: 0.0, green: 0.82, blue: 1.0))
-                        Text("•  \(sched.weekParity ?? "")")
-                            .font(.system(size: 12, weight: .semibold))
-                            .foregroundColor(.white.opacity(0.7))
+                        if let parity = sched.weekParity, !parity.isEmpty {
+                            Text("•  \(parity)")
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundColor(.white.opacity(0.7))
+                        }
                     }
                     Text(sched.dayTitle ?? "Сегодня")
                         .font(.system(size: 12, weight: .medium))
                         .foregroundColor(.white.opacity(0.6))
                 }
                 Spacer()
-                if let headline = sched.statusHeadline {
-                    Text(headline)
+                HStack(spacing: 4) {
+                    Circle()
+                        .fill(entry.isLessonActive ? Color.green : Color(red: 0.0, green: 0.82, blue: 1.0))
+                        .frame(width: 6, height: 6)
+                    Text(entry.statusBadgeText)
                         .font(.system(size: 11, weight: .bold))
                         .foregroundColor(.white)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
-                        .background(Color(red: 0.0, green: 0.44, blue: 0.95).opacity(0.3))
-                        .cornerRadius(6)
+                    if let target = entry.targetCountdownDate {
+                        Text(target, style: .relative)
+                            .font(.system(size: 11, weight: .bold))
+                            .foregroundColor(Color(red: 0.0, green: 0.82, blue: 1.0))
+                    }
                 }
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(Color.white.opacity(0.08))
+                .cornerRadius(6)
             }
 
-            Divider().background(Color.white.opacity(0.2))
+            Divider().background(Color.white.opacity(0.15))
 
-            // Schedule List
             if let lessons = sched.lessons, !lessons.isEmpty {
-                VStack(spacing: 8) {
-                    ForEach(lessons.prefix(5)) { lesson in
-                        HStack(alignment: .center, spacing: 8) {
-                            Text(lesson.time ?? "")
-                                .font(.system(size: 11, weight: .bold))
-                                .foregroundColor(Color(red: 0.0, green: 0.82, blue: 1.0))
-                                .frame(width: 80, alignment: .leading)
+                let cal = Calendar.current
+                let curM = cal.component(.hour, from: entry.date) * 60 + cal.component(.minute, from: entry.date)
+                let visibleLessons = sched.isTomorrow == true
+                    ? Array(lessons.prefix(5))
+                    : displayLessons(allLessons: lessons, activeLesson: entry.activeLesson, currentMinutes: curM, maxCount: 5)
 
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(lesson.disciplineTitle ?? "")
-                                    .font(.system(size: 12, weight: .semibold))
-                                    .foregroundColor(.white)
-                                    .lineLimit(1)
-                                if let teacher = lesson.teacher, !teacher.isEmpty {
-                                    Text(teacher)
-                                        .font(.system(size: 10, weight: .regular))
-                                        .foregroundColor(.white.opacity(0.5))
-                                        .lineLimit(1)
-                                }
-                            }
-                            Spacer()
-                            if let room = lesson.room, !room.isEmpty {
-                                Text(room)
-                                    .font(.system(size: 10, weight: .bold))
-                                    .padding(.horizontal, 6)
-                                    .padding(.vertical, 2)
-                                    .background(Color.white.opacity(0.12))
-                                    .cornerRadius(4)
-                                    .foregroundColor(.white)
-                            }
-                        }
+                VStack(spacing: 7) {
+                    ForEach(visibleLessons) { lesson in
+                        let isActive = entry.isLessonActive && entry.activeLesson?.id == lesson.id
+                        MediumLessonRow(lesson: lesson, isActive: isActive)
                     }
                 }
             } else {
                 Spacer()
-                CenterTextView(text: "Занятий на выбранный день нет")
+                CenterTextView(text: sched.isTomorrow == true ? "На завтра пар нет ✨" : "На сегодня пар нет ✨")
                 Spacer()
             }
             Spacer()
         }
-        .padding(16)
+        .padding(14)
     }
 }
 
@@ -412,38 +641,99 @@ struct ScheduleWidget: Widget {
 struct ScheduleLiveActivity: Widget {
     var body: some WidgetConfiguration {
         ActivityConfiguration(for: ScheduleActivityAttributes.self) { context in
-            // Lock Screen banner
-            HStack(spacing: 12) {
-                VStack(alignment: .leading, spacing: 3) {
-                    HStack(spacing: 6) {
+            // Lock Screen Banner
+            VStack(alignment: .leading, spacing: 6) {
+                // Header row: Group • Status • Live Countdown
+                HStack {
+                    HStack(spacing: 5) {
+                        Circle()
+                            .fill(context.state.isBreak ? Color.orange : Color(red: 0.0, green: 0.82, blue: 1.0))
+                            .frame(width: 7, height: 7)
                         Text(context.attributes.groupTitle)
-                            .font(.system(size: 13, weight: .bold))
+                            .font(.system(size: 12, weight: .heavy))
                             .foregroundColor(Color(red: 0.0, green: 0.82, blue: 1.0))
-                        if !context.state.timeRange.isEmpty {
-                            Text("•  \(context.state.timeRange)")
-                                .font(.system(size: 11, weight: .semibold))
-                                .foregroundColor(.white.opacity(0.8))
-                        }
+                        Text("•")
+                            .foregroundColor(.white.opacity(0.4))
+                        Text(context.state.statusBadge)
+                            .font(.system(size: 12, weight: .bold))
+                            .foregroundColor(.white)
                     }
-                    Text(context.state.currentLesson)
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundColor(.white)
-                        .lineLimit(1)
-                    if !context.state.statusSubline.isEmpty {
-                        Text(context.state.statusSubline)
-                            .font(.system(size: 11, weight: .medium))
-                            .foregroundColor(.white.opacity(0.6))
+                    Spacer()
+                    let targetDate = Date(timeIntervalSince1970: context.state.targetTimestamp)
+                    if context.state.targetTimestamp > Date().timeIntervalSince1970 {
+                        HStack(spacing: 3) {
+                            Image(systemName: "timer")
+                                .font(.system(size: 10, weight: .bold))
+                            Text(targetDate, style: .timer)
+                                .font(.system(size: 12, weight: .heavy, design: .monospaced))
+                        }
+                        .foregroundColor(Color(red: 0.0, green: 0.82, blue: 1.0))
+                        .padding(.horizontal, 7)
+                        .padding(.vertical, 3)
+                        .background(Color.white.opacity(0.1))
+                        .cornerRadius(6)
                     }
                 }
-                Spacer()
-                if !context.state.room.isEmpty {
-                    Text(context.state.room)
-                        .font(.system(size: 12, weight: .heavy))
-                        .foregroundColor(.white)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
-                        .background(Color(red: 0.0, green: 0.44, blue: 0.95).opacity(0.4))
-                        .cornerRadius(8)
+
+                // Main lesson row
+                HStack(alignment: .center, spacing: 8) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        HStack(spacing: 6) {
+                            Text(context.state.disciplineTitle)
+                                .font(.system(size: 14, weight: .bold))
+                                .foregroundColor(.white)
+                                .lineLimit(1)
+                            if !context.state.lessonType.isEmpty {
+                                Text(context.state.lessonType)
+                                    .font(.system(size: 10, weight: .bold))
+                                    .padding(.horizontal, 5)
+                                    .padding(.vertical, 1.5)
+                                    .background(Color.cyan.opacity(0.2))
+                                    .foregroundColor(Color(red: 0.0, green: 0.82, blue: 1.0))
+                                    .cornerRadius(4)
+                            }
+                        }
+
+                        HStack(spacing: 6) {
+                            if !context.state.timeRange.isEmpty {
+                                Text(context.state.timeRange)
+                                    .font(.system(size: 11, weight: .semibold))
+                                    .foregroundColor(.white.opacity(0.7))
+                            }
+                            if !context.state.teacher.isEmpty && context.state.teacher != "Кафедра" {
+                                Text("•  \(context.state.teacher)")
+                                    .font(.system(size: 11, weight: .regular))
+                                    .foregroundColor(.white.opacity(0.5))
+                                    .lineLimit(1)
+                            }
+                        }
+                    }
+
+                    Spacer()
+
+                    if !context.state.room.isEmpty && context.state.room != "—" {
+                        Text(context.state.room)
+                            .font(.system(size: 13, weight: .heavy))
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 9)
+                            .padding(.vertical, 5)
+                            .background(Color(red: 0.0, green: 0.44, blue: 0.95))
+                            .cornerRadius(8)
+                    }
+                }
+
+                // Next lesson preview
+                if !context.state.nextLessonPreview.isEmpty {
+                    Divider().background(Color.white.opacity(0.1))
+                    HStack(spacing: 4) {
+                        Image(systemName: "arrow.right.circle.fill")
+                            .font(.system(size: 10))
+                            .foregroundColor(.white.opacity(0.5))
+                        Text(context.state.nextLessonPreview)
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundColor(.white.opacity(0.7))
+                            .lineLimit(1)
+                    }
                 }
             }
             .padding(14)
@@ -455,43 +745,73 @@ struct ScheduleLiveActivity: Widget {
                         Text(context.attributes.groupTitle)
                             .font(.system(size: 12, weight: .heavy))
                             .foregroundColor(Color(red: 0.0, green: 0.82, blue: 1.0))
-                        Text(context.state.timeRange)
+                        Text(context.state.statusBadge)
                             .font(.system(size: 10, weight: .semibold))
                             .foregroundColor(.secondary)
                     }
                     .padding(.leading, 4)
                 }
                 DynamicIslandExpandedRegion(.trailing) {
-                    if !context.state.room.isEmpty {
-                        Text(context.state.room)
-                            .font(.system(size: 12, weight: .heavy))
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 2)
-                            .background(Color.blue.opacity(0.3))
-                            .cornerRadius(6)
-                            .padding(.trailing, 4)
+                    VStack(alignment: .trailing, spacing: 2) {
+                        if !context.state.room.isEmpty && context.state.room != "—" {
+                            Text(context.state.room)
+                                .font(.system(size: 11, weight: .heavy))
+                                .foregroundColor(.white)
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(Color(red: 0.0, green: 0.44, blue: 0.95))
+                                .cornerRadius(5)
+                        }
+                        let targetDate = Date(timeIntervalSince1970: context.state.targetTimestamp)
+                        if context.state.targetTimestamp > Date().timeIntervalSince1970 {
+                            Text(targetDate, style: .timer)
+                                .font(.system(size: 11, weight: .bold, design: .monospaced))
+                                .foregroundColor(Color(red: 0.0, green: 0.82, blue: 1.0))
+                        }
                     }
+                    .padding(.trailing, 4)
                 }
                 DynamicIslandExpandedRegion(.bottom) {
                     VStack(alignment: .leading, spacing: 3) {
-                        Text(context.state.currentLesson)
-                            .font(.system(size: 13, weight: .semibold))
-                            .lineLimit(1)
-                        if !context.state.statusSubline.isEmpty {
-                            Text(context.state.statusSubline)
-                                .font(.system(size: 11, weight: .medium))
+                        HStack(spacing: 5) {
+                            Text(context.state.disciplineTitle)
+                                .font(.system(size: 13, weight: .semibold))
+                                .foregroundColor(.white)
+                                .lineLimit(1)
+                            if !context.state.lessonType.isEmpty {
+                                Text(context.state.lessonType)
+                                    .font(.system(size: 10, weight: .bold))
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+                        if !context.state.nextLessonPreview.isEmpty {
+                            Text(context.state.nextLessonPreview)
+                                .font(.system(size: 10, weight: .medium))
                                 .foregroundColor(.secondary)
+                                .lineLimit(1)
                         }
                     }
                     .padding(.horizontal, 4)
                 }
             } compactLeading: {
-                Text(context.state.room.isEmpty ? context.attributes.groupTitle : context.state.room)
-                    .font(.system(size: 11, weight: .bold))
-                    .foregroundColor(Color(red: 0.0, green: 0.82, blue: 1.0))
+                HStack(spacing: 3) {
+                    Circle()
+                        .fill(context.state.isBreak ? Color.orange : Color(red: 0.0, green: 0.82, blue: 1.0))
+                        .frame(width: 5, height: 5)
+                    Text(context.state.room.isEmpty || context.state.room == "—" ? context.attributes.groupTitle : context.state.room)
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundColor(Color(red: 0.0, green: 0.82, blue: 1.0))
+                }
             } compactTrailing: {
-                Text(context.state.timeRange.components(separatedBy: " - ").last ?? "")
-                    .font(.system(size: 11, weight: .semibold))
+                let targetDate = Date(timeIntervalSince1970: context.state.targetTimestamp)
+                if context.state.targetTimestamp > Date().timeIntervalSince1970 {
+                    Text(targetDate, style: .timer)
+                        .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                        .frame(width: 44, alignment: .trailing)
+                } else {
+                    Text(context.state.timeRange.components(separatedBy: " – ").last ?? "")
+                        .font(.system(size: 11, weight: .semibold))
+                }
             } minimal: {
                 Image(systemName: "graduationcap.fill")
                     .font(.system(size: 11))

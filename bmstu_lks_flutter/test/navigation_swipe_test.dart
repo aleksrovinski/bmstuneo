@@ -137,5 +137,65 @@ void main() {
       await sched.deleteCustomLesson(custom.id!);
       expect(sched.allLessons.any((l) => l.disciplineTitle == 'Военная кафедра'), isFalse);
     });
+
+    test('Custom lesson with arbitrary custom time is sorted chronologically', () async {
+      SharedPreferences.setMockInitialValues({});
+      final apiService = BmstuApiService();
+      final sched = ScheduleProvider(apiService: apiService);
+
+      final lessonLate = ScheduleLesson(
+        id: 'custom_late',
+        isCustom: true,
+        day: 1,
+        time: 0,
+        startTime: '19:00',
+        endTime: '20:30',
+        week: 'all',
+        actType: 'sem',
+        audiences: const [],
+        teachers: const [],
+        disciplineTitle: 'Вечерний факультатив',
+      );
+
+      final lessonEarly = ScheduleLesson(
+        id: 'custom_early',
+        isCustom: true,
+        day: 1,
+        time: 0,
+        startTime: '07:30',
+        endTime: '08:15',
+        week: 'all',
+        actType: 'sem',
+        audiences: const [],
+        teachers: const [],
+        disciplineTitle: 'Утренняя разминка',
+      );
+
+      final lessonMiddle = ScheduleLesson(
+        id: 'custom_middle',
+        isCustom: true,
+        day: 1,
+        time: 1,
+        startTime: '08:30',
+        endTime: '10:05',
+        week: 'all',
+        actType: 'lecture',
+        audiences: const [],
+        teachers: const [],
+        disciplineTitle: 'Математический анализ',
+      );
+
+      await sched.addCustomLesson(lessonLate);
+      await sched.addCustomLesson(lessonEarly);
+      await sched.addCustomLesson(lessonMiddle);
+
+      final lessons = sched.getLessonsForDay(1, 'all');
+      expect(lessons.length, equals(3));
+      // Chronological order: 07:30 -> 08:30 -> 19:00
+      expect(lessons[0].startTime, equals('07:30'));
+      expect(lessons[1].startTime, equals('08:30'));
+      expect(lessons[2].startTime, equals('19:00'));
+    });
   });
 }
+

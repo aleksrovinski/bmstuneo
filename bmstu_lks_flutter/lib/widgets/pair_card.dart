@@ -90,7 +90,7 @@ class PairCard extends StatelessWidget {
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Text(
-                    '${lesson.time} пара',
+                    lesson.time > 0 ? '${lesson.time} пара' : 'Занятие',
                     style: TextStyle(
                       fontSize: 12,
                       fontWeight: FontWeight.w700,
