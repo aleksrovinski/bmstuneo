@@ -62,25 +62,33 @@ class DeadlineCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+    final isIOS = theme.platform == TargetPlatform.iOS;
     final statusColor = _getStatusColor(context);
 
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: theme.colorScheme.surfaceContainer,
-        borderRadius: BorderRadius.circular(14),
+        color: isIOS
+            ? (isDark
+                ? theme.colorScheme.surfaceContainer.withValues(alpha: 0.75)
+                : theme.colorScheme.surfaceContainerLow.withValues(alpha: 0.8))
+            : theme.colorScheme.surfaceContainer,
+        borderRadius: BorderRadius.circular(20),
         border: Border.all(
           color: status == DeadlineStatus.thisWeek
               ? const Color(0xFFF59E0B).withValues(alpha: 0.6)
-              : theme.colorScheme.outlineVariant.withValues(alpha: 0.6),
+              : (isIOS && isDark
+                  ? Colors.white.withValues(alpha: 0.12)
+                  : theme.colorScheme.outlineVariant.withValues(alpha: 0.6)),
           width: status == DeadlineStatus.thisWeek ? 1.5 : 1.0,
         ),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.03),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
+            color: Colors.black.withValues(alpha: isDark ? 0.2 : 0.03),
+            blurRadius: 10,
+            offset: const Offset(0, 3),
           ),
         ],
       ),
@@ -93,7 +101,7 @@ class DeadlineCard extends StatelessWidget {
             height: 48,
             decoration: BoxDecoration(
               color: statusColor.withValues(alpha: 0.12),
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: BorderRadius.circular(14),
             ),
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,

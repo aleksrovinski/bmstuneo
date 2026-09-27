@@ -44,27 +44,38 @@ class PairCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
+    final isIOS = theme.platform == TargetPlatform.iOS;
     final typeColor = _getTypeColor(lesson.actType);
 
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
       decoration: BoxDecoration(
-        color: isDark
-            ? theme.colorScheme.surfaceContainer
-            : theme.colorScheme.surfaceContainerLow,
-        borderRadius: BorderRadius.circular(16),
+        color: isCurrent
+            ? (isDark
+                ? theme.colorScheme.primaryContainer.withValues(alpha: 0.35)
+                : theme.colorScheme.primaryContainer.withValues(alpha: 0.45))
+            : (isIOS
+                ? (isDark
+                    ? theme.colorScheme.surfaceContainer.withValues(alpha: 0.72)
+                    : theme.colorScheme.surfaceContainerLow.withValues(alpha: 0.82))
+                : (isDark
+                    ? theme.colorScheme.surfaceContainer
+                    : theme.colorScheme.surfaceContainerLow)),
+        borderRadius: BorderRadius.circular(22),
         border: Border.all(
           color: isCurrent
               ? theme.colorScheme.primary
-              : theme.colorScheme.outlineVariant,
+              : (isIOS && isDark
+                  ? Colors.white.withValues(alpha: 0.12)
+                  : theme.colorScheme.outlineVariant),
           width: isCurrent ? 2.0 : 1.0,
         ),
         boxShadow: [
           BoxShadow(
             color: isCurrent
-                ? theme.colorScheme.primary.withValues(alpha: 0.15)
-                : Colors.black.withValues(alpha: 0.04),
-            blurRadius: 10,
+                ? theme.colorScheme.primary.withValues(alpha: 0.18)
+                : Colors.black.withValues(alpha: isDark ? 0.2 : 0.04),
+            blurRadius: 12,
             offset: const Offset(0, 4),
           ),
         ],

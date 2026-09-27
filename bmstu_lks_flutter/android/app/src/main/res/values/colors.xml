@@ -14,4 +14,5 @@
     <color name="widget_chip_bg">#2D2D35</color>
     <color name="widget_accent_green">#10B981</color>
     <color name="widget_accent_amber">#F59E0B</color>
+    <color name="widget_accent_cyan">#38BDF8</color>
 </resources>

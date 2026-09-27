@@ -7,6 +7,7 @@ import android.appwidget.AppWidgetProvider
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.os.Build
 import android.view.View
 import android.widget.RemoteViews
 import org.json.JSONArray
@@ -81,14 +82,13 @@ class ScheduleWidgetProvider : AppWidgetProvider() {
                     val groupTitle = json.optString("groupTitle", "МГТУ")
                     val dayTitle = json.optString("dayTitle", "Расписание")
                     val weekParity = json.optString("weekParity", "")
-                    val dynamicHeadline = computeDynamicStatus(json)
                     val lessons = json.optJSONArray("lessons") ?: JSONArray()
                     val hasLessons = lessons.length() > 0
 
                     views.setTextViewText(R.id.widget_group_title, groupTitle)
                     views.setTextViewText(R.id.widget_day_title, dayTitle)
                     views.setTextViewText(R.id.widget_week_parity, weekParity)
-                    views.setTextViewText(R.id.widget_status_headline, dynamicHeadline)
+                    bindLiveStatus(views, json)
 
                     if (!hasLessons) {
                         val isTomorrow = json.optBoolean("isTomorrow", false)
@@ -167,6 +167,8 @@ class ScheduleWidgetProvider : AppWidgetProvider() {
                     }
                 } catch (e: Exception) {
                     views.setTextViewText(R.id.widget_status_headline, "Нажмите, чтобы открыть")
+                    views.setViewVisibility(R.id.widget_status_headline, View.VISIBLE)
+                    views.setViewVisibility(R.id.widget_live_status_container, View.GONE)
                     views.setViewVisibility(R.id.widget_empty_view, View.VISIBLE)
                     views.setViewVisibility(R.id.widget_lessons_container, View.GONE)
                 }
@@ -176,6 +178,8 @@ class ScheduleWidgetProvider : AppWidgetProvider() {
                 views.setTextViewText(R.id.widget_day_title, "Расписание пар")
                 views.setTextViewText(R.id.widget_week_parity, "")
                 views.setTextViewText(R.id.widget_status_headline, "Нажмите для перехода в приложение")
+                views.setViewVisibility(R.id.widget_status_headline, View.VISIBLE)
+                views.setViewVisibility(R.id.widget_live_status_container, View.GONE)
                 views.setTextViewText(R.id.widget_empty_text, "Нажмите, чтобы открыть расписание")
                 views.setViewVisibility(R.id.widget_empty_view, View.VISIBLE)
                 views.setViewVisibility(R.id.widget_lessons_container, View.GONE)
@@ -196,19 +200,23 @@ class ScheduleWidgetProvider : AppWidgetProvider() {
             return null
         }
 
-        private fun computeDynamicStatus(json: JSONObject): String {
-            val lessons = json.optJSONArray("lessons") ?: return json.optString("statusHeadline", "")
-            if (lessons.length() == 0) {
-                val isTomorrow = json.optBoolean("isTomorrow", false)
-                return if (isTomorrow) "На завтра пар нет" else "На сегодня пар нет"
-            }
-
+        private fun bindLiveStatus(views: RemoteViews, json: JSONObject) {
+            val lessons = json.optJSONArray("lessons") ?: JSONArray()
             val isTomorrow = json.optBoolean("isTomorrow", false)
-            if (isTomorrow) {
-                val firstLesson = lessons.optJSONObject(0)
-                val startTime = firstLesson?.optString("startTime", "") ?: ""
-                val firstTitle = firstLesson?.optString("disciplineTitle", "") ?: ""
-                return if (startTime.isNotEmpty()) "Завтра: 1 пара в $startTime • $firstTitle" else "Расписание на завтра"
+
+            if (isTomorrow || lessons.length() == 0) {
+                val msg = if (isTomorrow) {
+                    val firstLesson = if (lessons.length() > 0) lessons.optJSONObject(0) else null
+                    val startTime = firstLesson?.optString("startTime", "") ?: ""
+                    val firstTitle = firstLesson?.optString("disciplineTitle", "") ?: ""
+                    if (startTime.isNotEmpty()) "Завтра: 1 пара в $startTime • $firstTitle" else "Расписание на завтра"
+                } else {
+                    "На сегодня пар нет! Отдыхайте 🎉"
+                }
+                views.setTextViewText(R.id.widget_status_headline, msg)
+                views.setViewVisibility(R.id.widget_status_headline, View.VISIBLE)
+                views.setViewVisibility(R.id.widget_live_status_container, View.GONE)
+                return
             }
 
             val cal = Calendar.getInstance()
@@ -216,43 +224,89 @@ class ScheduleWidgetProvider : AppWidgetProvider() {
 
             var currentLesson: JSONObject? = null
             var nextLesson: JSONObject? = null
+            var firstStartMin: Int? = null
 
             for (i in 0 until lessons.length()) {
                 val l = lessons.optJSONObject(i) ?: continue
                 val startTime = l.optString("startTime", "")
                 val endTime = l.optString("endTime", "")
-                val startMin = parseTimeToMinutes(startTime)
-                val endMin = parseTimeToMinutes(endTime)
+                val sMin = parseTimeToMinutes(startTime)
+                val eMin = parseTimeToMinutes(endTime)
 
-                if (startMin != null && endMin != null) {
-                    if (currentMinutes in startMin..endMin) {
+                if (sMin != null && (firstStartMin == null || sMin < firstStartMin)) {
+                    firstStartMin = sMin
+                }
+
+                if (sMin != null && eMin != null) {
+                    if (currentMinutes in sMin..eMin) {
                         currentLesson = l
                         break
-                    } else if (currentMinutes < startMin && nextLesson == null) {
+                    } else if (currentMinutes < sMin && nextLesson == null) {
                         nextLesson = l
                     }
                 }
             }
 
-            return when {
-                currentLesson != null -> {
-                    val title = currentLesson.optString("disciplineTitle", "")
-                    val endTime = currentLesson.optString("endTime", "")
-                    val endMin = parseTimeToMinutes(endTime)
-                    val remaining = if (endMin != null) endMin - currentMinutes else 0
-                    if (remaining > 0) "Идёт пара ($remaining мин до конца) • $title" else "Идёт пара (до $endTime) • $title"
+            if (currentLesson != null) {
+                val title = currentLesson.optString("disciplineTitle", "")
+                val room = currentLesson.optString("room", "")
+                val endTime = currentLesson.optString("endTime", "")
+                val endMin = parseTimeToMinutes(endTime) ?: 0
+                val targetMs = getTargetMillis(endMin)
+
+                val remainingMs = targetMs - System.currentTimeMillis()
+                if (remainingMs > 0) {
+                    val baseElapsed = android.os.SystemClock.elapsedRealtime() + remainingMs
+                    views.setTextViewText(R.id.widget_status_label, "Идёт пара")
+                    views.setChronometer(R.id.widget_chronometer, baseElapsed, null, true)
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                        views.setChronometerCountDown(R.id.widget_chronometer, true)
+                    }
+                    val roomPart = if (room.isNotEmpty() && room != "—") " ($room)" else ""
+                    views.setTextViewText(R.id.widget_status_details, "• $title$roomPart")
+                    views.setViewVisibility(R.id.widget_live_status_container, View.VISIBLE)
+                    views.setViewVisibility(R.id.widget_status_headline, View.GONE)
+                    return
                 }
-                nextLesson != null -> {
-                    val startTime = nextLesson.optString("startTime", "")
-                    val title = nextLesson.optString("disciplineTitle", "")
-                    val startMin = parseTimeToMinutes(startTime)
-                    val until = if (startMin != null) startMin - currentMinutes else 0
-                    if (until > 0) "След. пара через $until мин ($startTime) • $title" else "След. пара в $startTime • $title"
-                }
-                else -> {
-                    "Все пары на сегодня завершены 🎉"
+            } else if (nextLesson != null) {
+                val title = nextLesson.optString("disciplineTitle", "")
+                val room = nextLesson.optString("room", "")
+                val startTime = nextLesson.optString("startTime", "")
+                val startMin = parseTimeToMinutes(startTime) ?: 0
+                val targetMs = getTargetMillis(startMin)
+
+                val isBreak = firstStartMin != null && currentMinutes >= firstStartMin
+                val label = if (isBreak) "Перемена" else "До начала"
+
+                val remainingMs = targetMs - System.currentTimeMillis()
+                if (remainingMs > 0) {
+                    val baseElapsed = android.os.SystemClock.elapsedRealtime() + remainingMs
+                    views.setTextViewText(R.id.widget_status_label, label)
+                    views.setChronometer(R.id.widget_chronometer, baseElapsed, null, true)
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                        views.setChronometerCountDown(R.id.widget_chronometer, true)
+                    }
+                    val roomPart = if (room.isNotEmpty() && room != "—") " ($room)" else ""
+                    views.setTextViewText(R.id.widget_status_details, "• $title$roomPart")
+                    views.setViewVisibility(R.id.widget_live_status_container, View.VISIBLE)
+                    views.setViewVisibility(R.id.widget_status_headline, View.GONE)
+                    return
                 }
             }
+
+            // Default / Finished state
+            views.setTextViewText(R.id.widget_status_headline, "Все пары на сегодня завершены 🎉")
+            views.setViewVisibility(R.id.widget_status_headline, View.VISIBLE)
+            views.setViewVisibility(R.id.widget_live_status_container, View.GONE)
+        }
+
+        private fun getTargetMillis(minutes: Int): Long {
+            val cal = Calendar.getInstance()
+            cal.set(Calendar.HOUR_OF_DAY, minutes / 60)
+            cal.set(Calendar.MINUTE, minutes % 60)
+            cal.set(Calendar.SECOND, 0)
+            cal.set(Calendar.MILLISECOND, 0)
+            return cal.timeInMillis
         }
 
         private fun scheduleNextRefresh(context: Context, json: JSONObject) {
@@ -264,20 +318,31 @@ class ScheduleWidgetProvider : AppWidgetProvider() {
                 val cal = Calendar.getInstance()
                 val currentMinutes = cal.get(Calendar.HOUR_OF_DAY) * 60 + cal.get(Calendar.MINUTE)
 
-                var hasActiveOrUpcoming = false
+                var nextBoundaryMin: Int? = null
                 for (i in 0 until lessons.length()) {
                     val l = lessons.optJSONObject(i) ?: continue
+                    val startMin = parseTimeToMinutes(l.optString("startTime", ""))
                     val endMin = parseTimeToMinutes(l.optString("endTime", ""))
+
+                    if (startMin != null && startMin > currentMinutes) {
+                        if (nextBoundaryMin == null || startMin < nextBoundaryMin) {
+                            nextBoundaryMin = startMin
+                        }
+                    }
                     if (endMin != null && endMin > currentMinutes) {
-                        hasActiveOrUpcoming = true
-                        break
+                        if (nextBoundaryMin == null || endMin < nextBoundaryMin) {
+                            nextBoundaryMin = endMin
+                        }
                     }
                 }
 
-                if (hasActiveOrUpcoming) {
-                    val now = System.currentTimeMillis()
-                    // Schedule for next minute start + 200ms
-                    val nextMinuteMs = ((now / 60000L) + 1) * 60000L + 200L
+                if (nextBoundaryMin != null) {
+                    val targetCal = Calendar.getInstance().apply {
+                        set(Calendar.HOUR_OF_DAY, nextBoundaryMin / 60)
+                        set(Calendar.MINUTE, nextBoundaryMin % 60)
+                        set(Calendar.SECOND, 2)
+                        set(Calendar.MILLISECOND, 0)
+                    }
 
                     val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as? AlarmManager
                     val intent = Intent(context, ScheduleWidgetProvider::class.java).apply {
@@ -289,11 +354,12 @@ class ScheduleWidgetProvider : AppWidgetProvider() {
                         intent,
                         PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
                     )
+
                     if (alarmManager != null) {
-                        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
-                            alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC, nextMinuteMs, pendingIntent)
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                            alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, targetCal.timeInMillis, pendingIntent)
                         } else {
-                            alarmManager.set(AlarmManager.RTC, nextMinuteMs, pendingIntent)
+                            alarmManager.setExact(AlarmManager.RTC_WAKEUP, targetCal.timeInMillis, pendingIntent)
                         }
                     }
                 }

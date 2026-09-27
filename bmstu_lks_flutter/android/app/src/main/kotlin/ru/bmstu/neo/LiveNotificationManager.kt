@@ -13,7 +13,7 @@ import org.json.JSONObject
 import java.util.Calendar
 
 object LiveNotificationManager {
-    const val CHANNEL_ID = "ru.bmstu.neo.live_activity"
+    const val CHANNEL_ID = "ru.bmstu.neo.live_activity_v2"
     const val CHANNEL_NAME = "Live Updates (Текущая и следующая пара)"
     const val NOTIFICATION_ID = 2002
     const val KEY_NOTIFICATION_ENABLED = "live_notification_enabled"
@@ -28,7 +28,7 @@ object LiveNotificationManager {
                 val channel = NotificationChannel(
                     CHANNEL_ID,
                     CHANNEL_NAME,
-                    NotificationManager.IMPORTANCE_LOW
+                    NotificationManager.IMPORTANCE_DEFAULT
                 ).apply {
                     description = "Отображает текущую пару, время до конца и следующую пару в дни занятий"
                     setShowBadge(false)
@@ -243,8 +243,9 @@ object LiveNotificationManager {
                 .setContentIntent(pendingIntent)
                 .setOngoing(true) // Promoted Live Update ongoing event
                 .setOnlyAlertOnce(true)
-                .setPriority(NotificationCompat.PRIORITY_LOW)
-                .setCategory(NotificationCompat.CATEGORY_EVENT)
+                .setSilent(true) // Never beep or vibrate during live chronometer ticks
+                .setPriority(NotificationCompat.PRIORITY_HIGH)
+                .setCategory(NotificationCompat.CATEGORY_STATUS)
                 .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
                 .setColor(0xFF0070F3.toInt()) // BMSTU Blue accent
                 .setShowWhen(true)

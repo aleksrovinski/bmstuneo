@@ -89,7 +89,7 @@ class BmstuApp extends StatelessWidget {
           title: AppVersion.appName,
           debugShowCheckedModeBanner: false,
           themeMode: ThemeMode.system,
-          // Material You Light Theme
+          // Material You Light Theme (Expressive)
           theme: ThemeData(
             useMaterial3: true,
             brightness: Brightness.light,
@@ -105,39 +105,76 @@ class BmstuApp extends StatelessWidget {
             ),
             cardTheme: CardThemeData(
               elevation: 0,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
               color: lightColorScheme.surfaceContainerLow,
+              clipBehavior: Clip.antiAlias,
+            ),
+            filledButtonTheme: FilledButtonThemeData(
+              style: FilledButton.styleFrom(
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+              ),
+            ),
+            elevatedButtonTheme: ElevatedButtonThemeData(
+              style: ElevatedButton.styleFrom(
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                elevation: 0,
+              ),
+            ),
+            outlinedButtonTheme: OutlinedButtonThemeData(
+              style: OutlinedButton.styleFrom(
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              ),
             ),
             navigationBarTheme: NavigationBarThemeData(
-              height: 68,
+              height: 72,
               indicatorColor: lightColorScheme.secondaryContainer,
+              indicatorShape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
               backgroundColor: lightColorScheme.surface,
               surfaceTintColor: lightColorScheme.surfaceTint,
               iconTheme: WidgetStateProperty.resolveWith((states) {
                 if (states.contains(WidgetState.selected)) {
-                  return IconThemeData(color: lightColorScheme.onSecondaryContainer);
+                  return IconThemeData(color: lightColorScheme.onSecondaryContainer, size: 26);
                 }
-                return IconThemeData(color: lightColorScheme.onSurfaceVariant);
+                return IconThemeData(color: lightColorScheme.onSurfaceVariant, size: 24);
               }),
               labelTextStyle: WidgetStateProperty.resolveWith((states) {
                 if (states.contains(WidgetState.selected)) {
                   return TextStyle(
                     fontSize: 12,
                     fontWeight: FontWeight.w700,
+                    letterSpacing: 0.1,
                     color: lightColorScheme.onSurface,
                   );
                 }
                 return TextStyle(
                   fontSize: 12,
                   fontWeight: FontWeight.w500,
+                  letterSpacing: 0.1,
                   color: lightColorScheme.onSurfaceVariant,
                 );
               }),
               labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
             ),
+            inputDecorationTheme: InputDecorationTheme(
+              filled: true,
+              fillColor: lightColorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(16),
+                borderSide: BorderSide.none,
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(16),
+                borderSide: BorderSide.none,
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(16),
+                borderSide: BorderSide(color: lightColorScheme.primary, width: 2),
+              ),
+            ),
             textTheme: lightTextTheme,
           ),
-          // Material You Dark Theme
+          // Material You Dark Theme (Expressive)
           darkTheme: ThemeData(
             useMaterial3: true,
             brightness: Brightness.dark,
@@ -153,35 +190,72 @@ class BmstuApp extends StatelessWidget {
             ),
             cardTheme: CardThemeData(
               elevation: 0,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
               color: darkColorScheme.surfaceContainerLow,
+              clipBehavior: Clip.antiAlias,
+            ),
+            filledButtonTheme: FilledButtonThemeData(
+              style: FilledButton.styleFrom(
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+              ),
+            ),
+            elevatedButtonTheme: ElevatedButtonThemeData(
+              style: ElevatedButton.styleFrom(
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                elevation: 0,
+              ),
+            ),
+            outlinedButtonTheme: OutlinedButtonThemeData(
+              style: OutlinedButton.styleFrom(
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              ),
             ),
             navigationBarTheme: NavigationBarThemeData(
-              height: 68,
+              height: 72,
               indicatorColor: darkColorScheme.secondaryContainer,
+              indicatorShape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
               backgroundColor: darkColorScheme.surface,
               surfaceTintColor: darkColorScheme.surfaceTint,
               iconTheme: WidgetStateProperty.resolveWith((states) {
                 if (states.contains(WidgetState.selected)) {
-                  return IconThemeData(color: darkColorScheme.onSecondaryContainer);
+                  return IconThemeData(color: darkColorScheme.onSecondaryContainer, size: 26);
                 }
-                return IconThemeData(color: darkColorScheme.onSurfaceVariant);
+                return IconThemeData(color: darkColorScheme.onSurfaceVariant, size: 24);
               }),
               labelTextStyle: WidgetStateProperty.resolveWith((states) {
                 if (states.contains(WidgetState.selected)) {
                   return TextStyle(
                     fontSize: 12,
                     fontWeight: FontWeight.w700,
+                    letterSpacing: 0.1,
                     color: darkColorScheme.onSurface,
                   );
                 }
                 return TextStyle(
                   fontSize: 12,
                   fontWeight: FontWeight.w500,
+                  letterSpacing: 0.1,
                   color: darkColorScheme.onSurfaceVariant,
                 );
               }),
               labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
+            ),
+            inputDecorationTheme: InputDecorationTheme(
+              filled: true,
+              fillColor: darkColorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(16),
+                borderSide: BorderSide.none,
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(16),
+                borderSide: BorderSide.none,
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(16),
+                borderSide: BorderSide(color: darkColorScheme.primary, width: 2),
+              ),
             ),
             textTheme: darkTextTheme,
           ),

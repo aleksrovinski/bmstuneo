@@ -1,14 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:cached_network_image/cached_network_image.dart';
 import '../providers/auth_provider.dart';
 import '../providers/schedule_provider.dart';
 import '../providers/progress_provider.dart';
 import '../providers/fv_provider.dart';
 import '../widgets/pair_card.dart';
 import '../widgets/deadline_card.dart';
-import '../widgets/qr_pass_dialog.dart';
-import '../widgets/live_tracker_card.dart';
+import '../widgets/home_hero_card.dart';
 import '../models/nearest_pe_lesson.dart';
 import '../services/widget_sync_service.dart';
 
@@ -43,25 +41,9 @@ class _HomeScreenState extends State<HomeScreen> {
     });
   }
 
-  String _getBaumanGreeting(String studentName) {
-    final hour = DateTime.now().hour;
-    final name = studentName.isNotEmpty ? ', $studentName' : ', Бауманец';
-
-    if (hour >= 6 && hour < 12) {
-      return 'Доброе утро$name! ☕\nКофе выпит, гранит науки ждёт!';
-    } else if (hour >= 12 && hour < 18) {
-      return 'Здравствуй$name! 🚀\nДержи хвост пистолетом, а лабы сданными!';
-    } else if (hour >= 18 && hour < 23) {
-      return 'Добрый вечер$name! 📚\nВремя закрывать хвосты и готовиться к РК!';
-    } else {
-      return 'Ночь в Бауманке$name... 🌙\nСлава роботам и крепким нервам!';
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
 
     final auth = context.watch<AuthProvider>();
     final sched = context.watch<ScheduleProvider>();
@@ -165,79 +147,12 @@ class _HomeScreenState extends State<HomeScreen> {
             children: [
               const SizedBox(height: 8),
 
-              // 1. Original Bauman Greeting Banner
-              Container(
-                margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-                padding: const EdgeInsets.all(18),
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: isDark
-                        ? [theme.colorScheme.surfaceContainerHigh, theme.colorScheme.surfaceContainer]
-                        : [theme.colorScheme.primary, theme.colorScheme.primary.withValues(alpha: 0.82)],
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                  ),
-                  borderRadius: BorderRadius.circular(20),
-                  boxShadow: [
-                    BoxShadow(
-                      color: theme.colorScheme.primary.withValues(alpha: isDark ? 0.2 : 0.3),
-                      blurRadius: 16,
-                      offset: const Offset(0, 6),
-                    ),
-                  ],
-                ),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            _getBaumanGreeting(user?.firstName ?? ''),
-                            style: const TextStyle(
-                              fontSize: 15,
-                              fontWeight: FontWeight.w700,
-                              color: Colors.white,
-                              height: 1.35,
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            'Сегодня: ${todayLessons.length} пар(ы)',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: Colors.white.withValues(alpha: 0.85),
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Container(
-                      width: 52,
-                      height: 52,
-                      decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.15),
-                        shape: BoxShape.circle,
-                      ),
-                      child: const Center(
-                        child: Icon(Icons.rocket_launch_rounded, color: Colors.white, size: 28),
-                      ),
-                    ),
-                  ],
-                ),
+              // 1. Unified Hero Card (Greeting + Next/Live Pair Tracker + Compact Pass Button)
+              HomeHeroCard(
+                onOpenSchedule: widget.onOpenSchedule,
               ),
 
-              // 2. Live Pair Tracker Card (isolated real-time countdown)
-              const LiveTrackerCard(),
-
-              // 3. Digital Pass (QR-код) Quick Card
-              if (auth.isFullAuth && user?.qrUrl != null && user!.qrUrl!.isNotEmpty) ...[
-                _buildQrPassBanner(context, user.qrUrl!, user.fullName, user.groupTitle),
-              ],
-
-              // 4. Physical Culture Quick Card
+              // 2. Physical Culture Quick Card
               if (auth.isFullAuth || nearestPe != null) ...[
                 _buildFvBanner(context, fv, nearestPe),
               ],
@@ -348,106 +263,7 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _buildQrPassBanner(
-    BuildContext context,
-    String qrUrl,
-    String studentName,
-    String groupTitle,
-  ) {
-    final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
 
-    return InkWell(
-      onTap: () => QrPassDialog.show(
-        context,
-        qrUrl: qrUrl,
-        studentName: studentName,
-        groupTitle: groupTitle,
-      ),
-      borderRadius: BorderRadius.circular(16),
-      child: Container(
-        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        decoration: BoxDecoration(
-          color: isDark ? theme.colorScheme.surfaceContainer : theme.colorScheme.surfaceContainerLow,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(
-            color: theme.colorScheme.outlineVariant,
-            width: 1.0,
-          ),
-          boxShadow: [
-            BoxShadow(
-              color: theme.colorScheme.primary.withValues(alpha: 0.05),
-              blurRadius: 10,
-              offset: const Offset(0, 3),
-            ),
-          ],
-        ),
-        child: Row(
-          children: [
-            // Miniature QR
-            Container(
-              width: 52,
-              height: 52,
-              padding: const EdgeInsets.all(4),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: Colors.black12),
-              ),
-              child: CachedNetworkImage(
-                imageUrl: qrUrl,
-                fit: BoxFit.contain,
-                placeholder: (context, url) => const Center(
-                  child: SizedBox(
-                    width: 16,
-                    height: 16,
-                    child: CircularProgressIndicator(strokeWidth: 1.5),
-                  ),
-                ),
-                errorWidget: (context, url, error) => const Icon(
-                  Icons.qr_code,
-                  size: 24,
-                  color: Colors.black45,
-                ),
-              ),
-            ),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Icon(Icons.badge_rounded, size: 16, color: theme.colorScheme.primary),
-                      const SizedBox(width: 6),
-                      Text(
-                        'Электронный пропуск МГТУ',
-                        style: TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w700,
-                          color: theme.colorScheme.onSurface,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    'Нажмите для открытия QR-кода турникета',
-                    style: TextStyle(
-                      fontSize: 11,
-                      color: theme.colorScheme.onSurfaceVariant,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            Icon(Icons.chevron_right_rounded, color: theme.colorScheme.primary),
-          ],
-        ),
-      ),
-    );
-  }
 
   Widget _buildGuestFeatureNotice(String message) {
     return Builder(
@@ -509,23 +325,30 @@ class _HomeScreenState extends State<HomeScreen> {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     final isDark = theme.brightness == Brightness.dark;
+    final isIOS = theme.platform == TargetPlatform.iOS;
     final data = fv.data;
     final isCreditReady = data?.isCreditReady ?? false;
 
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
       decoration: BoxDecoration(
-        color: isDark ? colorScheme.surfaceContainer : colorScheme.surfaceContainerLow,
-        borderRadius: BorderRadius.circular(18),
+        color: isIOS
+            ? (isDark
+                ? colorScheme.surfaceContainer.withValues(alpha: 0.72)
+                : colorScheme.surfaceContainerLow.withValues(alpha: 0.82))
+            : (isDark ? colorScheme.surfaceContainer : colorScheme.surfaceContainerLow),
+        borderRadius: BorderRadius.circular(22),
         border: Border.all(
-          color: colorScheme.outlineVariant,
+          color: isIOS && isDark
+              ? Colors.white.withValues(alpha: 0.12)
+              : colorScheme.outlineVariant,
           width: 1.0,
         ),
         boxShadow: [
           BoxShadow(
-            color: colorScheme.shadow.withValues(alpha: 0.03),
-            blurRadius: 10,
-            offset: const Offset(0, 3),
+            color: colorScheme.shadow.withValues(alpha: isDark ? 0.2 : 0.03),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
           ),
         ],
       ),
@@ -533,7 +356,7 @@ class _HomeScreenState extends State<HomeScreen> {
         color: Colors.transparent,
         child: InkWell(
           onTap: widget.onOpenFv,
-          borderRadius: BorderRadius.circular(18),
+          borderRadius: BorderRadius.circular(22),
           child: Padding(
             padding: const EdgeInsets.all(14),
             child: Column(
