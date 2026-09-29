@@ -325,23 +325,16 @@ class _HomeScreenState extends State<HomeScreen> {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     final isDark = theme.brightness == Brightness.dark;
-    final isIOS = theme.platform == TargetPlatform.iOS;
     final data = fv.data;
     final isCreditReady = data?.isCreditReady ?? false;
 
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
       decoration: BoxDecoration(
-        color: isIOS
-            ? (isDark
-                ? colorScheme.surfaceContainer.withValues(alpha: 0.72)
-                : colorScheme.surfaceContainerLow.withValues(alpha: 0.82))
-            : (isDark ? colorScheme.surfaceContainer : colorScheme.surfaceContainerLow),
+        color: isDark ? colorScheme.surfaceContainer : colorScheme.surfaceContainerLow,
         borderRadius: BorderRadius.circular(22),
         border: Border.all(
-          color: isIOS && isDark
-              ? Colors.white.withValues(alpha: 0.12)
-              : colorScheme.outlineVariant,
+          color: colorScheme.outlineVariant.withValues(alpha: 0.7),
           width: 1.0,
         ),
         boxShadow: [

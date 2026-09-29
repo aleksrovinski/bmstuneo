@@ -1,4 +1,3 @@
-import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -90,6 +89,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isIOS = Theme.of(context).platform == TargetPlatform.iOS;
+    final isDark = theme.brightness == Brightness.dark;
 
     final pages = [
       HomeScreen(
@@ -132,33 +132,41 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
     ];
 
     return Scaffold(
-      extendBody: isIOS,
+      extendBody: false,
       body: IndexedStack(
         index: _currentIndex,
         children: pages,
       ),
       bottomNavigationBar: isIOS
-          ? ClipRect(
-              child: BackdropFilter(
-                filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: theme.colorScheme.surface.withValues(alpha: 0.75),
-                    border: Border(
-                      top: BorderSide(
-                        color: theme.colorScheme.outlineVariant.withValues(alpha: 0.3),
-                        width: 0.5,
-                      ),
-                    ),
-                  ),
-                  child: NavigationBar(
-                    backgroundColor: Colors.transparent,
-                    elevation: 0,
-                    selectedIndex: _currentIndex,
-                    onDestinationSelected: _onDestinationSelected,
-                    destinations: destinations,
+          ? Container(
+              decoration: BoxDecoration(
+                color: isDark
+                    ? const Color(0xF01C1C1E)
+                    : const Color(0xF5FFFFFF),
+                border: Border(
+                  top: BorderSide(
+                    color: isDark
+                        ? const Color(0x33FFFFFF)
+                        : const Color(0x28000000),
+                    width: 0.5,
                   ),
                 ),
+                boxShadow: [
+                  BoxShadow(
+                    color: isDark
+                        ? Colors.black.withValues(alpha: 0.35)
+                        : Colors.black.withValues(alpha: 0.04),
+                    blurRadius: 10,
+                    offset: const Offset(0, -2),
+                  ),
+                ],
+              ),
+              child: NavigationBar(
+                backgroundColor: Colors.transparent,
+                elevation: 0,
+                selectedIndex: _currentIndex,
+                onDestinationSelected: _onDestinationSelected,
+                destinations: destinations,
               ),
             )
           : Container(

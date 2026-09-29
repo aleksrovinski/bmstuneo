@@ -30,7 +30,7 @@ class ProfileScreen extends StatelessWidget {
         title: const Text('Профиль и статус'),
       ),
       body: SingleChildScrollView(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 36),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [

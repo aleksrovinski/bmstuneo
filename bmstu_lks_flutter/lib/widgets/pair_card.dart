@@ -44,7 +44,6 @@ class PairCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
-    final isIOS = theme.platform == TargetPlatform.iOS;
     final typeColor = _getTypeColor(lesson.actType);
 
     return Container(
@@ -54,20 +53,14 @@ class PairCard extends StatelessWidget {
             ? (isDark
                 ? theme.colorScheme.primaryContainer.withValues(alpha: 0.35)
                 : theme.colorScheme.primaryContainer.withValues(alpha: 0.45))
-            : (isIOS
-                ? (isDark
-                    ? theme.colorScheme.surfaceContainer.withValues(alpha: 0.72)
-                    : theme.colorScheme.surfaceContainerLow.withValues(alpha: 0.82))
-                : (isDark
-                    ? theme.colorScheme.surfaceContainer
-                    : theme.colorScheme.surfaceContainerLow)),
+            : (isDark
+                ? theme.colorScheme.surfaceContainer
+                : theme.colorScheme.surfaceContainerLow),
         borderRadius: BorderRadius.circular(22),
         border: Border.all(
           color: isCurrent
               ? theme.colorScheme.primary
-              : (isIOS && isDark
-                  ? Colors.white.withValues(alpha: 0.12)
-                  : theme.colorScheme.outlineVariant),
+              : theme.colorScheme.outlineVariant.withValues(alpha: 0.7),
           width: isCurrent ? 2.0 : 1.0,
         ),
         boxShadow: [

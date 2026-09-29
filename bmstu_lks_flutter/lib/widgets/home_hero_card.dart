@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
@@ -322,15 +321,7 @@ class _HomeHeroCardState extends State<HomeHeroCard> {
 
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-      child: isIOS
-          ? ClipRRect(
-              borderRadius: BorderRadius.circular(26),
-              child: BackdropFilter(
-                filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-                child: cardContent,
-              ),
-            )
-          : cardContent,
+      child: cardContent,
     );
   }
 }
