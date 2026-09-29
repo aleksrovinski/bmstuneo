@@ -7,6 +7,7 @@ import '../widgets/pair_card.dart';
 import '../widgets/group_picker_sheet.dart';
 import '../widgets/add_custom_lesson_sheet.dart';
 import '../widgets/live_activity_settings_sheet.dart';
+import 'teacher_schedule_screen.dart';
 
 class ScheduleScreen extends StatefulWidget {
   const ScheduleScreen({super.key});
@@ -162,6 +163,17 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
           ],
         ),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.person_search_rounded),
+            tooltip: 'Расписание преподавателя',
+            onPressed: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => const TeacherScheduleScreen(),
+                ),
+              );
+            },
+          ),
           IconButton(
             icon: const Icon(Icons.notifications_active_rounded),
             tooltip: 'Live Activity и виджет',

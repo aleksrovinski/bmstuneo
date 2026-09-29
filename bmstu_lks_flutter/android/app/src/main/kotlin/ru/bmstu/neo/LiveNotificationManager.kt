@@ -159,54 +159,56 @@ object LiveNotificationManager {
             if (currentLesson != null) {
                 val pairLabel = if (currentLesson.time > 0) "${currentLesson.time} пара" else "Занятие"
                 val typePart = if (currentLesson.type.isNotEmpty()) " (${currentLesson.type})" else ""
-                val roomPart = if (currentLesson.room.isNotEmpty() && currentLesson.room != "—") " • ауд. ${currentLesson.room}" else ""
-                val teacherPart = if (currentLesson.teacher.isNotEmpty() && currentLesson.teacher != "Кафедра") " • ${currentLesson.teacher}" else ""
+                val currentRoom = if (currentLesson.room.isNotEmpty() && currentLesson.room != "—") "📍 Ауд. ${currentLesson.room}" else "📍 Корпус МГТУ"
+
+                notificationTitle = "$currentRoom • $pairLabel: ${currentLesson.title}$typePart"
+
+                val teacherPart = if (currentLesson.teacher.isNotEmpty() && currentLesson.teacher != "Кафедра") "👤 ${currentLesson.teacher}" else ""
                 val nextPart = if (nextLesson != null) {
-                    val nextLabel = if (nextLesson.time > 0) "${nextLesson.time} пара" else "след. занятие"
-                    " • Далее: $nextLabel (${nextLesson.startTime})"
+                    val nextLabel = if (nextLesson.time > 0) "${nextLesson.time} пара" else "след. пара"
+                    val nextRoomPart = if (nextLesson.room.isNotEmpty() && nextLesson.room != "—") " (ауд. ${nextLesson.room})" else ""
+                    "Далее: $nextLabel в ${nextLesson.startTime}$nextRoomPart"
                 } else {
-                    " • Последняя пара 🎉"
+                    "Последняя пара 🎉"
                 }
 
-                notificationTitle = "Идёт $pairLabel (до ${currentLesson.endTime}): ${currentLesson.title}$typePart"
-                notificationText = "${currentLesson.room.let { if (it.isNotEmpty() && it != "—") "Ауд. $it" else "" }}$teacherPart$nextPart".trimStart(' ', '•')
+                notificationText = listOf(teacherPart, nextPart).filter { it.isNotEmpty() }.joinToString(" • ")
 
-                bigTextBuilder.append("⏳ Текущая: $pairLabel (${currentLesson.startTime}–${currentLesson.endTime})\n")
-                bigTextBuilder.append("${currentLesson.title}$typePart")
-                if (currentLesson.room.isNotEmpty() && currentLesson.room != "—") bigTextBuilder.append("\n📍 Ауд. ${currentLesson.room}")
-                if (currentLesson.teacher.isNotEmpty() && currentLesson.teacher != "Кафедра") bigTextBuilder.append("\n👤 ${currentLesson.teacher}")
+                bigTextBuilder.append("📍 Где: ${if (currentLesson.room.isNotEmpty() && currentLesson.room != "—") "Ауд. ${currentLesson.room}" else "МГТУ им. Н.Э. Баумана"}\n")
+                bigTextBuilder.append("📖 $pairLabel (${currentLesson.startTime}–${currentLesson.endTime}): ${currentLesson.title}$typePart\n")
+                if (currentLesson.teacher.isNotEmpty() && currentLesson.teacher != "Кафедра") {
+                    bigTextBuilder.append("👤 Преподаватель: ${currentLesson.teacher}\n")
+                }
 
                 if (nextLesson != null) {
                     val nextLabel = if (nextLesson.time > 0) "${nextLesson.time} пара" else "следующее занятие"
                     val nextType = if (nextLesson.type.isNotEmpty()) " (${nextLesson.type})" else ""
-                    bigTextBuilder.append("\n\n➡️ Далее: $nextLabel (${nextLesson.startTime}–${nextLesson.endTime})\n")
-                    bigTextBuilder.append("${nextLesson.title}$nextType")
-                    if (nextLesson.room.isNotEmpty() && nextLesson.room != "—") bigTextBuilder.append(" • ауд. ${nextLesson.room}")
+                    val nextRoom = if (nextLesson.room.isNotEmpty() && nextLesson.room != "—") " • ауд. ${nextLesson.room}" else ""
+                    bigTextBuilder.append("\n➡️ Далее в ${nextLesson.startTime}: $nextLabel — ${nextLesson.title}$nextType$nextRoom")
+                    if (nextLesson.teacher.isNotEmpty() && nextLesson.teacher != "Кафедра") {
+                        bigTextBuilder.append("\n👤 ${nextLesson.teacher}")
+                    }
                 } else {
-                    bigTextBuilder.append("\n\n🎉 Это последняя пара на сегодня!")
+                    bigTextBuilder.append("\n🎉 Это последняя пара на сегодня!")
                 }
             } else if (nextLesson != null) {
-                val until = nextLesson.startMin - currentMinutes
                 val isBreak = currentMinutes >= firstLesson.startMin
                 val nextLabel = if (nextLesson.time > 0) "${nextLesson.time} пара" else "Занятие"
                 val typePart = if (nextLesson.type.isNotEmpty()) " (${nextLesson.type})" else ""
-                val roomPart = if (nextLesson.room.isNotEmpty() && nextLesson.room != "—") " • ауд. ${nextLesson.room}" else ""
-                val teacherPart = if (nextLesson.teacher.isNotEmpty() && nextLesson.teacher != "Кафедра") " • ${nextLesson.teacher}" else ""
+                val nextRoom = if (nextLesson.room.isNotEmpty() && nextLesson.room != "—") "📍 Ауд. ${nextLesson.room}" else "📍 Корпус МГТУ"
 
-                if (isBreak) {
-                    notificationTitle = "Перемена (до ${nextLesson.startTime}) • $nextLabel"
-                    notificationText = "${nextLesson.title}$typePart$roomPart$teacherPart"
-                    bigTextBuilder.append("☕ Перемена! До звонка осталось $until мин\n\n")
-                } else {
-                    notificationTitle = "Пары сегодня с ${nextLesson.startTime} • $nextLabel"
-                    notificationText = "${nextLesson.title}$typePart$roomPart$teacherPart"
-                    bigTextBuilder.append("☀️ До начала занятий осталось $until мин\n\n")
+                notificationTitle = "$nextRoom • $nextLabel: ${nextLesson.title}$typePart"
+
+                val subStatus = if (isBreak) "Перемена" else "Пары сегодня"
+                val teacherPart = if (nextLesson.teacher.isNotEmpty() && nextLesson.teacher != "Кафедра") "👤 ${nextLesson.teacher}" else ""
+                notificationText = listOf("$subStatus (начало в ${nextLesson.startTime})", teacherPart).filter { it.isNotEmpty() }.joinToString(" • ")
+
+                bigTextBuilder.append("📍 Где: ${if (nextLesson.room.isNotEmpty() && nextLesson.room != "—") "Ауд. ${nextLesson.room}" else "МГТУ им. Н.Э. Баумана"}\n")
+                bigTextBuilder.append("📖 $nextLabel (начало в ${nextLesson.startTime}): ${nextLesson.title}$typePart\n")
+                if (nextLesson.teacher.isNotEmpty() && nextLesson.teacher != "Кафедра") {
+                    bigTextBuilder.append("👤 Преподаватель: ${nextLesson.teacher}\n")
                 }
-
-                bigTextBuilder.append("➡️ $nextLabel (${nextLesson.startTime}–${nextLesson.endTime})\n")
-                bigTextBuilder.append("${nextLesson.title}$typePart")
-                if (nextLesson.room.isNotEmpty() && nextLesson.room != "—") bigTextBuilder.append("\n📍 Ауд. ${nextLesson.room}")
-                if (nextLesson.teacher.isNotEmpty() && nextLesson.teacher != "Кафедра") bigTextBuilder.append("\n👤 ${nextLesson.teacher}")
+                bigTextBuilder.append("⏰ Время занятия: ${nextLesson.startTime}–${nextLesson.endTime}")
             } else {
                 cancelNotification(context)
                 return
@@ -261,11 +263,12 @@ object LiveNotificationManager {
                 builder.setProgress(totalDuration, elapsed, false)
                 builder.setSubText("Пара ${currentLesson.time} • Live Update")
             } else if (nextLesson != null) {
+                val isBreak = currentMinutes >= firstLesson.startMin
                 val prevEnd = lessonList.findLast { it.endMin <= currentMinutes }?.endMin ?: firstLesson.startMin
                 val breakDuration = (nextLesson.startMin - prevEnd).coerceAtLeast(1)
                 val elapsed = (currentMinutes - prevEnd).coerceIn(0, breakDuration)
                 builder.setProgress(breakDuration, elapsed, false)
-                builder.setSubText("Перемена • Live Update")
+                builder.setSubText(if (isBreak) "Перемена • Live Update" else "До занятий • Live Update")
             }
 
             // Android 16+ Promoted Ongoing Notification (Live Updates) request

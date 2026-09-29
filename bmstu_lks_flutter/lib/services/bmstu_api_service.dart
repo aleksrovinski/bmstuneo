@@ -15,6 +15,26 @@ class BmstuAuthException implements Exception {
   String toString() => message;
 }
 
+class TeacherSearchItem {
+  final String title;
+  final String uuid;
+
+  const TeacherSearchItem({
+    required this.title,
+    required this.uuid,
+  });
+
+  factory TeacherSearchItem.fromJson(Map<String, dynamic> json) => TeacherSearchItem(
+        title: json['title']?.toString() ?? '',
+        uuid: json['uuid']?.toString() ?? '',
+      );
+
+  Map<String, dynamic> toJson() => {
+        'title': title,
+        'uuid': uuid,
+      };
+}
+
 class BmstuApiService {
   static const String apiBase = 'https://lks.bmstu.ru/lks-back/api/v1';
 
@@ -225,8 +245,20 @@ class BmstuApiService {
 
       final disc = map['discipline'] as Map<String, dynamic>? ?? {};
       final stream = map['stream'] as Map<String, dynamic>?;
-      final streamName = stream?['name']?.toString();
-      final isStream = streamName != null && streamName.contains(';');
+      var streamName = stream?['name']?.toString();
+      if (streamName == null || streamName.isEmpty) {
+        final rawGroups = map['groups'] as List?;
+        if (rawGroups != null && rawGroups.isNotEmpty) {
+          final gNames = rawGroups
+              .map((g) => (g is Map ? (g['name'] ?? g['title']) : g)?.toString() ?? '')
+              .where((g) => g.isNotEmpty)
+              .join(', ');
+          if (gNames.isNotEmpty) {
+            streamName = gNames;
+          }
+        }
+      }
+      final isStream = streamName != null && (streamName.contains(';') || streamName.contains(','));
 
       return ScheduleLesson(
         day: (map['day'] as num?)?.toInt() ?? 1,
@@ -265,6 +297,39 @@ class BmstuApiService {
     // 2. Try public endpoint
     try {
       final pubResp = await _dio.get('$apiBase/schedules/groups/$groupUuid/public');
+      if (pubResp.statusCode == 200 && pubResp.data is Map) {
+        final data = pubResp.data['data'] ?? pubResp.data;
+        final sched = data?['schedule'] as List?;
+        if (sched != null) {
+          return normalizeSchedule(sched);
+        }
+      }
+    } catch (_) {}
+
+    return [];
+  }
+
+  // Get Schedule for Teacher
+  Future<List<ScheduleLesson>> getTeacherSchedule(String teacherUuid) async {
+    if (teacherUuid.isEmpty) return [];
+
+    // 1. Try private endpoint if authenticated
+    if (_isAuthenticated) {
+      try {
+        final privResp = await _dio.get('$apiBase/schedules/teachers/$teacherUuid/private');
+        if (privResp.statusCode == 200 && privResp.data is Map) {
+          final data = privResp.data['data'] ?? privResp.data;
+          final sched = data?['schedule'] as List?;
+          if (sched != null && sched.isNotEmpty) {
+            return normalizeSchedule(sched);
+          }
+        }
+      } catch (_) {}
+    }
+
+    // 2. Try public endpoint
+    try {
+      final pubResp = await _dio.get('$apiBase/schedules/teachers/$teacherUuid/public');
       if (pubResp.statusCode == 200 && pubResp.data is Map) {
         final data = pubResp.data['data'] ?? pubResp.data;
         final sched = data?['schedule'] as List?;
@@ -396,27 +461,55 @@ class BmstuApiService {
   Future<List<GroupItem>> searchGroupsOnline(String query) async {
     if (query.trim().isEmpty) return BmstuGroupsCatalog.popularGroups;
     try {
-      if (_isAuthenticated) {
-        final resp = await _dio.get(
-          '$apiBase/schedules/search',
-          queryParameters: {'s': query.trim()},
-        );
-        if (resp.statusCode == 200 && resp.data is List) {
-          final list = resp.data as List;
-          final results = <GroupItem>[];
-          for (final item in list) {
-            if (item is Map && item['type'] == 'group') {
-              results.add(GroupItem(
-                title: item['title']?.toString() ?? '',
-                uuid: item['uuid']?.toString() ?? '',
-              ));
-            }
+      final resp = await _dio.get(
+        '$apiBase/schedules/search',
+        queryParameters: {'s': query.trim()},
+      );
+      if (resp.statusCode == 200 && resp.data is List) {
+        final list = resp.data as List;
+        final results = <GroupItem>[];
+        for (final item in list) {
+          if (item is Map && item['type'] == 'group') {
+            results.add(GroupItem(
+              title: item['title']?.toString() ?? '',
+              uuid: item['uuid']?.toString() ?? '',
+            ));
           }
-          if (results.isNotEmpty) return results;
         }
+        if (results.isNotEmpty) return results;
       }
     } catch (_) {}
     // Fallback to local 3401 catalog
     return BmstuGroupsCatalog.search(query);
+  }
+
+  // Online search for teachers
+  Future<List<TeacherSearchItem>> searchTeachersOnline(String query) async {
+    final cleanQuery = query.trim();
+    if (cleanQuery.isEmpty) return [];
+    try {
+      final resp = await _dio.get(
+        '$apiBase/schedules/search',
+        queryParameters: {'s': cleanQuery},
+      );
+      if (resp.statusCode == 200 && resp.data is List) {
+        final list = resp.data as List;
+        final results = <TeacherSearchItem>[];
+        for (final item in list) {
+          if (item is Map && item['type'] == 'teacher') {
+            final title = item['title']?.toString() ?? '';
+            final uuid = item['uuid']?.toString() ?? '';
+            if (title.isNotEmpty && uuid.isNotEmpty) {
+              results.add(TeacherSearchItem(
+                title: title,
+                uuid: uuid,
+              ));
+            }
+          }
+        }
+        return results;
+      }
+    } catch (_) {}
+    return [];
   }
 }

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../models/schedule_lesson.dart';
+import 'teacher_details_sheet.dart';
 
 class PairCard extends StatelessWidget {
   final ScheduleLesson lesson;
@@ -215,25 +216,50 @@ class PairCard extends StatelessWidget {
                 ),
                 // Teacher
                 Expanded(
-                  child: Row(
-                    children: [
-                      Icon(
-                        Icons.person_outline_rounded,
-                        size: 16,
-                        color: theme.colorScheme.onSurfaceVariant,
-                      ),
-                      const SizedBox(width: 6),
-                      Flexible(
-                        child: Text(
-                          lesson.teachersFormatted,
-                          style: TextStyle(
-                            fontSize: 13,
-                            color: theme.colorScheme.onSurfaceVariant,
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(8),
+                    onTap: lesson.teachers.isNotEmpty
+                        ? () {
+                            TeacherDetailsSheet.show(
+                              context,
+                              teachers: lesson.teachers,
+                              disciplineTitle: lesson.disciplineTitle,
+                              actTypeTitle: lesson.actTypeTitle,
+                              audiences: lesson.audiencesFormatted,
+                            );
+                          }
+                        : null,
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 2, horizontal: 2),
+                      child: Row(
+                        children: [
+                          Icon(
+                            Icons.person_outline_rounded,
+                            size: 16,
+                            color: lesson.teachers.isNotEmpty
+                                ? theme.colorScheme.primary
+                                : theme.colorScheme.onSurfaceVariant,
                           ),
-                          overflow: TextOverflow.ellipsis,
-                        ),
+                          const SizedBox(width: 6),
+                          Flexible(
+                            child: Text(
+                              lesson.teachersFormatted,
+                              style: TextStyle(
+                                fontSize: 13,
+                                color: lesson.teachers.isNotEmpty
+                                    ? theme.colorScheme.primary
+                                    : theme.colorScheme.onSurfaceVariant,
+                                decoration: lesson.teachers.isNotEmpty
+                                    ? TextDecoration.underline
+                                    : null,
+                                decorationStyle: TextDecorationStyle.dotted,
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
                       ),
-                    ],
+                    ),
                   ),
                 ),
               ],

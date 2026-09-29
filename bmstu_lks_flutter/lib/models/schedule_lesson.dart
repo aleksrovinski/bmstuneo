@@ -46,7 +46,19 @@ class ScheduleTeacher {
   String get formattedName {
     final f = firstName.isNotEmpty ? '${firstName[0]}.' : '';
     final m = middleName.isNotEmpty ? '${middleName[0]}.' : '';
-    return '$lastName $f$m'.trim();
+    final initials = '$f$m'.trim();
+    if (initials.isNotEmpty) {
+      return '$lastName $initials'.trim();
+    }
+    return lastName.isNotEmpty ? lastName : 'Кафедра';
+  }
+
+  String get fullName {
+    final parts = [lastName, firstName, middleName].where((s) => s.isNotEmpty).toList();
+    if (parts.isNotEmpty) {
+      return parts.join(' ');
+    }
+    return 'Преподаватель кафедры';
   }
 
   Map<String, dynamic> toJson() => {
@@ -119,6 +131,11 @@ class ScheduleLesson {
   }
 
   String get displayTeachers => teachersFormatted;
+
+  String get teachersFullFormatted {
+    if (teachers.isEmpty) return 'Кафедра';
+    return teachers.map((t) => t.fullName).join(', ');
+  }
 
   String get actTypeTitle {
     switch (actType.toLowerCase()) {
