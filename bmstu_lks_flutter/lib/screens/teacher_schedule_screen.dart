@@ -1,18 +1,24 @@
 import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/schedule_lesson.dart';
+import '../providers/auth_provider.dart';
+import '../providers/schedule_provider.dart';
 import '../services/bmstu_api_service.dart';
+import 'login_screen.dart';
 
 class TeacherScheduleScreen extends StatefulWidget {
   final String? teacherUuid;
   final String? teacherName;
+  final BmstuApiService? apiService;
 
   const TeacherScheduleScreen({
     super.key,
     this.teacherUuid,
     this.teacherName,
+    this.apiService,
   });
 
   static const List<String> daysShort = ['ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ'];
@@ -30,7 +36,6 @@ class TeacherScheduleScreen extends StatefulWidget {
 }
 
 class _TeacherScheduleScreenState extends State<TeacherScheduleScreen> {
-  final BmstuApiService _apiService = BmstuApiService();
   final TextEditingController _searchController = TextEditingController();
   late final PageController _dayPageController;
   Timer? _debounceTimer;
@@ -42,11 +47,16 @@ class _TeacherScheduleScreenState extends State<TeacherScheduleScreen> {
   List<TeacherSearchItem> _searchResults = [];
 
   bool _isLoading = false;
+  bool _isAuthRequired = false;
+  bool _isGuestLimited = false;
   String? _errorMessage;
   List<ScheduleLesson> _lessons = [];
 
   int _selectedDay = 1;
   String _weekFilter = 'all'; // 'all' | 'ch' | 'zn'
+
+  BmstuApiService get _apiService =>
+      widget.apiService ?? context.read<AuthProvider>().apiService;
 
   @override
   void initState() {
@@ -58,13 +68,17 @@ class _TeacherScheduleScreenState extends State<TeacherScheduleScreen> {
     _currentUuid = widget.teacherUuid;
     _currentName = widget.teacherName;
 
-    if (_currentUuid != null && _currentUuid!.isNotEmpty) {
-      _loadCachedAndFetch();
-    } else if (_currentName != null && _currentName!.isNotEmpty) {
-      _resolveTeacherByName(_currentName!);
-    } else {
-      _isSearching = true;
-    }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_currentUuid != null && _currentUuid!.isNotEmpty) {
+        _loadCachedAndFetch();
+      } else if (_currentName != null && _currentName!.isNotEmpty) {
+        _resolveTeacherByName(_currentName!);
+      } else {
+        setState(() {
+          _isSearching = true;
+        });
+      }
+    });
   }
 
   @override
@@ -92,35 +106,117 @@ class _TeacherScheduleScreenState extends State<TeacherScheduleScreen> {
     await _fetchSchedule();
   }
 
-  Future<void> _resolveTeacherByName(String name) async {
+  Future<void> _resolveTeacherByName(String name, {bool isRetry = false}) async {
+    final auth = context.read<AuthProvider>();
+
+    if (auth.isGuest || !auth.isFullAuth) {
+      // In guest mode, find within the loaded schedule
+      final sched = context.read<ScheduleProvider>();
+      final localLessons = sched.allLessons.where((l) {
+        return l.teachers.any((t) =>
+            t.fullName.toLowerCase().contains(name.toLowerCase()) ||
+            t.lastName.toLowerCase().contains(name.toLowerCase()));
+      }).toList();
+
+      if (localLessons.isNotEmpty) {
+        final matchTeacher = localLessons
+            .expand((l) => l.teachers)
+            .firstWhere((t) =>
+                t.fullName.toLowerCase().contains(name.toLowerCase()) ||
+                t.lastName.toLowerCase().contains(name.toLowerCase()));
+        setState(() {
+          _currentUuid = matchTeacher.uuid ?? 'local_${matchTeacher.lastName}';
+          _currentName = matchTeacher.fullName;
+          _lessons = localLessons;
+          _isLoading = false;
+          _isGuestLimited = true;
+        });
+        return;
+      }
+
+      setState(() {
+        _isLoading = false;
+        _isAuthRequired = true;
+        _isSearching = true;
+      });
+      return;
+    }
+
     setState(() {
       _isLoading = true;
       _errorMessage = null;
+      _isAuthRequired = false;
     });
 
-    final searchResults = await _apiService.searchTeachersOnline(name);
-    if (searchResults.isNotEmpty && mounted) {
-      final match = searchResults.first;
-      setState(() {
-        _currentUuid = match.uuid;
-        _currentName = match.title;
-      });
-      await _loadCachedAndFetch();
-    } else if (mounted) {
-      setState(() {
-        _isLoading = false;
-        _errorMessage = 'Преподаватель не найден в системе расписания';
-        _isSearching = true;
-      });
+    try {
+      final searchResults = await _apiService.searchTeachersOnline(name);
+      if (searchResults.isNotEmpty && mounted) {
+        final match = searchResults.first;
+        setState(() {
+          _currentUuid = match.uuid;
+          _currentName = match.title;
+        });
+        await _loadCachedAndFetch();
+      } else if (mounted) {
+        setState(() {
+          _isLoading = false;
+          _errorMessage = 'Преподаватель не найден в системе расписания';
+          _isSearching = true;
+        });
+      }
+    } on BmstuAuthException catch (_) {
+      if (!isRetry && mounted) {
+        final reloggedIn = await auth.reloginSilently();
+        if (reloggedIn && mounted) {
+          return _resolveTeacherByName(name, isRetry: true);
+        }
+      }
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+          _errorMessage = 'Сессия устарела. Требуется повторный вход в ЛКС.';
+          _isAuthRequired = true;
+        });
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+          _isSearching = true;
+        });
+      }
     }
   }
 
-  Future<void> _fetchSchedule() async {
+  Future<void> _fetchSchedule({bool isRetry = false}) async {
     if (_currentUuid == null || _currentUuid!.isEmpty) return;
+
+    final auth = context.read<AuthProvider>();
+
+    // If guest mode, extract lessons from current group
+    if (auth.isGuest || !auth.isFullAuth) {
+      final sched = context.read<ScheduleProvider>();
+      final localLessons = sched.allLessons.where((l) {
+        return l.teachers.any((t) =>
+            (t.uuid != null && t.uuid == _currentUuid) ||
+            t.fullName.toLowerCase() == (_currentName ?? '').toLowerCase() ||
+            t.formattedName.toLowerCase() == (_currentName ?? '').toLowerCase() ||
+            (_currentName != null && t.lastName.isNotEmpty && _currentName!.contains(t.lastName)));
+      }).toList();
+
+      setState(() {
+        _isLoading = false;
+        _lessons = localLessons;
+        _isAuthRequired = localLessons.isEmpty;
+        _isGuestLimited = localLessons.isNotEmpty;
+      });
+      return;
+    }
 
     setState(() {
       _isLoading = true;
       _errorMessage = null;
+      _isAuthRequired = false;
     });
 
     try {
@@ -129,6 +225,8 @@ class _TeacherScheduleScreenState extends State<TeacherScheduleScreen> {
         setState(() {
           _lessons = fetched;
           _isLoading = false;
+          _isAuthRequired = false;
+          _isGuestLimited = false;
         });
 
         // Save to cache
@@ -137,6 +235,20 @@ class _TeacherScheduleScreenState extends State<TeacherScheduleScreen> {
           final jsonString = jsonEncode(fetched.map((l) => l.toJson()).toList());
           await prefs.setString('teacher_sched_${_currentUuid!}', jsonString);
         } catch (_) {}
+      }
+    } on BmstuAuthException catch (_) {
+      if (!isRetry && mounted) {
+        final reloggedIn = await auth.reloginSilently();
+        if (reloggedIn && mounted) {
+          return _fetchSchedule(isRetry: true);
+        }
+      }
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+          _errorMessage = 'Сессия устарела. Требуется повторный вход в ЛКС.';
+          _isAuthRequired = true;
+        });
       }
     } catch (e) {
       if (mounted) {
@@ -166,12 +278,63 @@ class _TeacherScheduleScreenState extends State<TeacherScheduleScreen> {
     });
 
     _debounceTimer = Timer(const Duration(milliseconds: 350), () async {
-      final results = await _apiService.searchTeachersOnline(trimmed);
-      if (mounted) {
-        setState(() {
-          _searchResults = results;
-          _isSearchLoading = false;
-        });
+      final auth = context.read<AuthProvider>();
+      if (auth.isGuest || !auth.isFullAuth) {
+        // Search in current group's schedule
+        final sched = context.read<ScheduleProvider>();
+        final teachersMap = <String, TeacherSearchItem>{};
+        for (final l in sched.allLessons) {
+          for (final t in l.teachers) {
+            if (t.fullName.toLowerCase().contains(trimmed.toLowerCase()) ||
+                t.lastName.toLowerCase().contains(trimmed.toLowerCase())) {
+              teachersMap[t.fullName] = TeacherSearchItem(
+                title: t.fullName,
+                uuid: t.uuid ?? 'local_${t.lastName}',
+              );
+            }
+          }
+        }
+        if (mounted) {
+          setState(() {
+            _searchResults = teachersMap.values.toList();
+            _isSearchLoading = false;
+          });
+        }
+        return;
+      }
+
+      try {
+        final results = await _apiService.searchTeachersOnline(trimmed);
+        if (mounted) {
+          setState(() {
+            _searchResults = results;
+            _isSearchLoading = false;
+          });
+        }
+      } on BmstuAuthException catch (_) {
+        if (mounted) {
+          final reloggedIn = await auth.reloginSilently();
+          if (reloggedIn && mounted) {
+            final retryResults = await _apiService.searchTeachersOnline(trimmed);
+            if (mounted) {
+              setState(() {
+                _searchResults = retryResults;
+                _isSearchLoading = false;
+              });
+            }
+            return;
+          }
+          setState(() {
+            _isSearchLoading = false;
+            _isAuthRequired = true;
+          });
+        }
+      } catch (_) {
+        if (mounted) {
+          setState(() {
+            _isSearchLoading = false;
+          });
+        }
       }
     });
   }
@@ -308,7 +471,9 @@ class _TeacherScheduleScreenState extends State<TeacherScheduleScreen> {
           const SizedBox(width: 8),
         ],
       ),
-      body: _isSearching ? _buildSearchResultsView(theme, isDark) : _buildScheduleView(theme, isDark),
+      body: _isSearching
+          ? _buildSearchResultsView(theme, isDark)
+          : _buildScheduleView(theme, isDark),
     );
   }
 
@@ -318,6 +483,7 @@ class _TeacherScheduleScreenState extends State<TeacherScheduleScreen> {
     }
 
     if (_searchController.text.trim().isEmpty) {
+      final auth = context.read<AuthProvider>();
       return Center(
         child: Padding(
           padding: const EdgeInsets.all(32),
@@ -338,13 +504,27 @@ class _TeacherScheduleScreenState extends State<TeacherScheduleScreen> {
               ),
               const SizedBox(height: 8),
               Text(
-                'Введите фамилию или имя преподавателя МГТУ им. Баумана для просмотра его полного расписания',
+                auth.isGuest
+                    ? 'В гостевом режиме доступен поиск по преподавателям текущей группы. Для поиска по всем преподавателям МГТУ войдите в аккаунт ЛКС.'
+                    : 'Введите фамилию преподавателя МГТУ им. Баумана для просмотра его полного расписания',
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   fontSize: 14,
                   color: theme.colorScheme.onSurfaceVariant,
                 ),
               ),
+              if (auth.isGuest) ...[
+                const SizedBox(height: 16),
+                FilledButton.tonalIcon(
+                  onPressed: () {
+                    Navigator.of(context).push(
+                      MaterialPageRoute(builder: (_) => const LoginScreen()),
+                    );
+                  },
+                  icon: const Icon(Icons.login_rounded),
+                  label: const Text('Войти в ЛКС'),
+                ),
+              ],
             ],
           ),
         ),
@@ -453,6 +633,57 @@ class _TeacherScheduleScreenState extends State<TeacherScheduleScreen> {
       return const Center(child: CircularProgressIndicator());
     }
 
+    if (_isAuthRequired && _lessons.isEmpty) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(32),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.primaryContainer,
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(
+                  Icons.lock_outline_rounded,
+                  size: 48,
+                  color: theme.colorScheme.primary,
+                ),
+              ),
+              const SizedBox(height: 20),
+              Text(
+                'Требуется авторизация в ЛКС',
+                style: theme.textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Расписание преподавателей защищено политикой безопасности МГТУ им. Баумана и доступно только после входа в аккаунт ЛКС.',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 14,
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+              const SizedBox(height: 24),
+              FilledButton.icon(
+                onPressed: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(builder: (_) => const LoginScreen()),
+                  );
+                },
+                icon: const Icon(Icons.login_rounded),
+                label: const Text('Войти в аккаунт ЛКС'),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
     if (_errorMessage != null && _lessons.isEmpty) {
       return Center(
         child: Padding(
@@ -483,7 +714,7 @@ class _TeacherScheduleScreenState extends State<TeacherScheduleScreen> {
               ),
               const SizedBox(height: 16),
               FilledButton.tonal(
-                onPressed: _fetchSchedule,
+                onPressed: () => _fetchSchedule(),
                 child: const Text('Повторить'),
               ),
             ],
@@ -494,6 +725,44 @@ class _TeacherScheduleScreenState extends State<TeacherScheduleScreen> {
 
     return Column(
       children: [
+        // Guest mode informational notice
+        if (_isGuestLimited)
+          Container(
+            margin: const EdgeInsets.fromLTRB(16, 8, 16, 2),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              color: theme.colorScheme.secondaryContainer.withValues(alpha: 0.6),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Row(
+              children: [
+                Icon(
+                  Icons.info_outline_rounded,
+                  size: 18,
+                  color: theme.colorScheme.onSecondaryContainer,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Показаны пары в вашей группе. Для всех групп войдите в ЛКС.',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: theme.colorScheme.onSecondaryContainer,
+                    ),
+                  ),
+                ),
+                TextButton(
+                  onPressed: () {
+                    Navigator.of(context).push(
+                      MaterialPageRoute(builder: (_) => const LoginScreen()),
+                    );
+                  },
+                  child: const Text('Войти'),
+                ),
+              ],
+            ),
+          ),
+
         // Day selector tab bar
         Container(
           margin: const EdgeInsets.fromLTRB(16, 8, 16, 4),
@@ -631,7 +900,7 @@ class _TeacherScheduleScreenState extends State<TeacherScheduleScreen> {
               }
 
               return RefreshIndicator(
-                onRefresh: _fetchSchedule,
+                onRefresh: () => _fetchSchedule(),
                 child: ListView.builder(
                   padding: const EdgeInsets.symmetric(vertical: 8),
                   itemCount: dayLessons.length,

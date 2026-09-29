@@ -4,6 +4,10 @@ import 'package:bmstu_neo/models/schedule_lesson.dart';
 import 'package:bmstu_neo/services/bmstu_api_service.dart';
 import 'package:bmstu_neo/widgets/pair_card.dart';
 import 'package:bmstu_neo/widgets/teacher_details_sheet.dart';
+import 'package:provider/provider.dart';
+import 'package:bmstu_neo/services/auth_storage.dart';
+import 'package:bmstu_neo/providers/auth_provider.dart';
+import 'package:bmstu_neo/providers/schedule_provider.dart';
 import 'package:bmstu_neo/screens/teacher_schedule_screen.dart';
 
 void main() {
@@ -111,11 +115,25 @@ void main() {
     });
 
     testWidgets('TeacherScheduleScreen renders search prompt when opened empty', (WidgetTester tester) async {
+      final authStorage = AuthStorage();
+      final apiService = BmstuApiService();
+
       await tester.pumpWidget(
-        const MaterialApp(
-          home: TeacherScheduleScreen(),
+        MultiProvider(
+          providers: [
+            ChangeNotifierProvider(
+              create: (_) => AuthProvider(apiService: apiService, authStorage: authStorage),
+            ),
+            ChangeNotifierProvider(
+              create: (_) => ScheduleProvider(apiService: apiService),
+            ),
+          ],
+          child: const MaterialApp(
+            home: TeacherScheduleScreen(),
+          ),
         ),
       );
+      await tester.pump();
 
       expect(find.text('Поиск по преподавателям'), findsOneWidget);
       expect(find.byType(TextField), findsOneWidget);

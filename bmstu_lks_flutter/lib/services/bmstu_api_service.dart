@@ -313,29 +313,23 @@ class BmstuApiService {
   Future<List<ScheduleLesson>> getTeacherSchedule(String teacherUuid) async {
     if (teacherUuid.isEmpty) return [];
 
-    // 1. Try private endpoint if authenticated
-    if (_isAuthenticated) {
-      try {
-        final privResp = await _dio.get('$apiBase/schedules/teachers/$teacherUuid/private');
-        if (privResp.statusCode == 200 && privResp.data is Map) {
-          final data = privResp.data['data'] ?? privResp.data;
-          final sched = data?['schedule'] as List?;
-          if (sched != null && sched.isNotEmpty) {
+    try {
+      final resp = await _dio.get('$apiBase/schedules/teacher/$teacherUuid');
+      if (resp.statusCode == 200) {
+        if (resp.data is Map) {
+          final data = resp.data['data'] ?? resp.data;
+          final sched = (data is Map ? data['schedule'] : null) as List? ??
+              (data is List ? data : null);
+          if (sched != null) {
             return normalizeSchedule(sched);
           }
+        } else if (resp.data is List) {
+          return normalizeSchedule(resp.data as List);
         }
-      } catch (_) {}
-    }
-
-    // 2. Try public endpoint
-    try {
-      final pubResp = await _dio.get('$apiBase/schedules/teachers/$teacherUuid/public');
-      if (pubResp.statusCode == 200 && pubResp.data is Map) {
-        final data = pubResp.data['data'] ?? pubResp.data;
-        final sched = data?['schedule'] as List?;
-        if (sched != null) {
-          return normalizeSchedule(sched);
-        }
+      }
+    } on DioException catch (dioErr) {
+      if (dioErr.response?.statusCode == 401 || dioErr.response?.statusCode == 403) {
+        throw BmstuAuthException('Сессия устарела или требуется авторизация в ЛКС');
       }
     } catch (_) {}
 
@@ -498,7 +492,7 @@ class BmstuApiService {
         for (final item in list) {
           if (item is Map && item['type'] == 'teacher') {
             final title = item['title']?.toString() ?? '';
-            final uuid = item['uuid']?.toString() ?? '';
+            final uuid = (item['uuid'] ?? item['id'])?.toString() ?? '';
             if (title.isNotEmpty && uuid.isNotEmpty) {
               results.add(TeacherSearchItem(
                 title: title,
@@ -508,6 +502,10 @@ class BmstuApiService {
           }
         }
         return results;
+      }
+    } on DioException catch (dioErr) {
+      if (dioErr.response?.statusCode == 401 || dioErr.response?.statusCode == 403) {
+        throw BmstuAuthException('Для поиска преподавателей требуется авторизация в ЛКС');
       }
     } catch (_) {}
     return [];

@@ -73,7 +73,7 @@ class ScheduleTeacher {
         firstName: json['firstName'] as String? ?? '',
         lastName: json['lastName'] as String? ?? '',
         middleName: json['middleName'] as String? ?? '',
-        uuid: json['uuid'] as String?,
+        uuid: (json['uuid'] ?? json['id'] ?? json['teacherUuid'])?.toString(),
       );
 }
 
