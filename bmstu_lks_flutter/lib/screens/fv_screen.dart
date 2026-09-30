@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
 import '../providers/fv_provider.dart';
 import '../models/physical_culture.dart';
+import '../widgets/offline_status_banner.dart';
 
 class FvScreen extends StatelessWidget {
   const FvScreen({super.key});
@@ -39,6 +40,16 @@ class FvScreen extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
+              // Offline Banner
+              if (!auth.isGuest && fv.syncStatus != null && !fv.syncStatus!.isLive) ...[
+                OfflineStatusBanner(
+                  message: fv.syncStatus?.message,
+                  lastUpdated: fv.syncStatus?.lastUpdated,
+                  onRetry: fv.isLoading ? null : () => fv.refresh(),
+                ),
+                const SizedBox(height: 8),
+              ],
+
               // Guest Mode Notice
               if (auth.isGuest) ...[
                 Container(

@@ -7,6 +7,7 @@ import '../providers/fv_provider.dart';
 import '../widgets/pair_card.dart';
 import '../widgets/deadline_card.dart';
 import '../widgets/home_hero_card.dart';
+import '../widgets/offline_status_banner.dart';
 import '../models/nearest_pe_lesson.dart';
 import '../services/widget_sync_service.dart';
 
@@ -146,6 +147,15 @@ class _HomeScreenState extends State<HomeScreen> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               const SizedBox(height: 8),
+
+              if (sched.syncStatus != null && !sched.syncStatus!.isLive) ...[
+                OfflineStatusBanner(
+                  message: sched.syncStatus?.message,
+                  lastUpdated: sched.syncStatus?.lastUpdated,
+                  onRetry: sched.isLoading ? null : () => sched.refresh(),
+                ),
+                const SizedBox(height: 4),
+              ],
 
               // 1. Unified Hero Card (Greeting + Next/Live Pair Tracker + Compact Pass Button)
               HomeHeroCard(

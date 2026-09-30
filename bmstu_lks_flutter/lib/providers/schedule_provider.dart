@@ -11,6 +11,8 @@ import '../services/widget_sync_service.dart';
 class ScheduleProvider with ChangeNotifier {
   static const _cachePrefix = 'cached_sched_v1_';
   static const _cacheTimePrefix = 'cached_sched_time_v1_';
+  static const _cachedCurrentWeekKey = 'bmstu_cached_current_week_v1';
+  static const _cachedCurrentWeekTimeKey = 'bmstu_cached_current_week_time_v1';
   final BmstuApiService apiService;
 
   static const _customLessonsKey = 'bmstu_custom_lessons_v1';
@@ -35,6 +37,7 @@ class ScheduleProvider with ChangeNotifier {
       _selectedDay = 1; // Mon if Sunday
     }
     loadCustomLessons();
+    _restoreCachedWeek();
   }
 
   CurrentWeek? get currentWeek => _currentWeek;
@@ -126,13 +129,75 @@ class ScheduleProvider with ChangeNotifier {
     } catch (_) {}
   }
 
+  Future<void> _saveCachedCurrentWeek(CurrentWeek week) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_cachedCurrentWeekKey, jsonEncode(week.toJson()));
+      await prefs.setString(_cachedCurrentWeekTimeKey, DateTime.now().toIso8601String());
+    } catch (_) {}
+  }
+
+  Future<void> _restoreCachedWeek() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(_cachedCurrentWeekKey);
+      if (raw != null && raw.isNotEmpty) {
+        final decoded = jsonDecode(raw) as Map<String, dynamic>;
+        final cachedWeek = CurrentWeek.fromJson(decoded);
+        final rawTime = prefs.getString(_cachedCurrentWeekTimeKey);
+        final cachedAt = rawTime != null ? DateTime.tryParse(rawTime) : null;
+
+        if (cachedAt != null) {
+          final now = DateTime.now();
+          final cachedMonday = DateTime(cachedAt.year, cachedAt.month, cachedAt.day)
+              .subtract(Duration(days: cachedAt.weekday - 1));
+          final nowMonday = DateTime(now.year, now.month, now.day)
+              .subtract(Duration(days: now.weekday - 1));
+          final weeksPassed = nowMonday.difference(cachedMonday).inDays ~/ 7;
+
+          if (weeksPassed != 0) {
+            final newWeekNumber = cachedWeek.weekNumber + weeksPassed;
+            final isNum = (weeksPassed % 2 == 0)
+                ? cachedWeek.isNumerator
+                : !cachedWeek.isNumerator;
+
+            _currentWeek = CurrentWeek(
+              weekNumber: newWeekNumber > 0 ? newWeekNumber : 1,
+              weekName: isNum ? 'числитель' : 'знаменатель',
+              weekShortName: isNum ? 'чс' : 'зн',
+              term: cachedWeek.term,
+              semesterStarts: cachedWeek.semesterStarts,
+              semesterEnds: cachedWeek.semesterEnds,
+            );
+          } else {
+            _currentWeek = cachedWeek;
+          }
+        } else {
+          _currentWeek = cachedWeek;
+        }
+        notifyListeners();
+        return;
+      }
+    } catch (e) {
+      debugPrint('[ScheduleProvider] Error restoring cached week: $e');
+    }
+
+    if (_currentWeek == null) {
+      _currentWeek = CurrentWeek.defaultWeek();
+      notifyListeners();
+    }
+  }
+
   // Load schedule for group with offline cache support
   Future<void> loadSchedule({required String groupUuid, required String groupTitle}) async {
     _currentGroupUuid = groupUuid;
     _currentGroupTitle = groupTitle;
     _errorMessage = null;
 
-    // Fast offline preview if lessons are not loaded yet
+    // Fast offline preview if lessons or current week are not loaded yet
+    if (_currentWeek == null) {
+      await _restoreCachedWeek();
+    }
     if (_lessons.isEmpty) {
       final cached = await _loadScheduleFromCache(groupUuid);
       if (cached != null && cached.isNotEmpty) {
@@ -142,7 +207,7 @@ class ScheduleProvider with ChangeNotifier {
           lastUpdated: cachedTime ?? DateTime.now(),
           isLive: false,
           itemCount: _lessons.length,
-          message: 'Офлайн-копия расписания',
+          message: 'Офлайн-режим (сохранённая копия)',
         );
         notifyListeners();
       }
@@ -153,30 +218,52 @@ class ScheduleProvider with ChangeNotifier {
 
     try {
       // 1. Fetch current week
-      _currentWeek = await apiService.getCurrentWeek();
+      final freshWeek = await apiService.getCurrentWeek(fallbackToDefault: false);
+      if (freshWeek != null) {
+        _currentWeek = freshWeek;
+        await _saveCachedCurrentWeek(freshWeek);
+      } else if (_currentWeek == null) {
+        await _restoreCachedWeek();
+      }
 
       // 2. Fetch fresh lessons from network
       final freshLessons = await apiService.getGroupSchedule(groupUuid);
       if (freshLessons.isNotEmpty) {
         _lessons = freshLessons;
         await _saveScheduleToCache(groupUuid, freshLessons);
-      } else if (_lessons.isEmpty) {
-        final cached = await _loadScheduleFromCache(groupUuid);
-        if (cached != null && cached.isNotEmpty) {
-          _lessons = cached;
+        _syncStatus = SyncStatus(
+          lastUpdated: DateTime.now(),
+          isLive: true,
+          itemCount: _lessons.length,
+        );
+      } else {
+        // Empty lessons returned (or public endpoint gave empty)
+        if (_lessons.isEmpty) {
+          final cached = await _loadScheduleFromCache(groupUuid);
+          if (cached != null && cached.isNotEmpty) {
+            _lessons = cached;
+          }
         }
+        final cachedTime = await _loadCacheTimestamp(groupUuid);
+        _syncStatus = SyncStatus(
+          lastUpdated: cachedTime ?? DateTime.now(),
+          isLive: false,
+          itemCount: _lessons.length,
+          message: _lessons.isNotEmpty
+              ? 'Офлайн-режим (сохранённая копия)'
+              : 'Расписание не найдено',
+        );
       }
 
-      _syncStatus = SyncStatus(
-        lastUpdated: DateTime.now(),
-        isLive: true,
-        itemCount: _lessons.length,
-      );
       _isLoading = false;
       notifyListeners();
       WidgetSyncService.updateScheduleWidget(scheduleProvider: this);
     } catch (e) {
       _errorMessage = e.toString().replaceAll('Exception: ', '');
+
+      if (_currentWeek == null) {
+        await _restoreCachedWeek();
+      }
 
       // Offline fallback: restore from cache if not already restored
       if (_lessons.isEmpty) {
@@ -192,7 +279,7 @@ class ScheduleProvider with ChangeNotifier {
         isLive: false,
         itemCount: _lessons.length,
         message: _lessons.isNotEmpty
-            ? 'Офлайн-режим (показана сохраненная копия)'
+            ? 'Офлайн-режим (сохранённая копия)'
             : 'Ошибка обновления: $_errorMessage',
       );
       _isLoading = false;

@@ -27,4 +27,28 @@ class UserProfile {
     final f = firstName.isNotEmpty ? firstName[0] : '';
     return '$l$f'.toUpperCase();
   }
+
+  Map<String, dynamic> toJson() => {
+        'lastName': lastName,
+        'firstName': firstName,
+        'middleName': middleName,
+        'groupTitle': groupTitle,
+        'groupCode': groupCode,
+        'groupUuid': groupUuid,
+        'stageUuid': stageUuid,
+        'personUuid': personUuid,
+        'qrUrl': qrUrl,
+      };
+
+  factory UserProfile.fromJson(Map<String, dynamic> json) => UserProfile(
+        lastName: json['lastName'] as String? ?? '',
+        firstName: json['firstName'] as String? ?? '',
+        middleName: json['middleName'] as String? ?? '',
+        groupTitle: json['groupTitle'] as String? ?? 'Студент',
+        groupCode: json['groupCode'] as String?,
+        groupUuid: json['groupUuid'] as String? ?? '',
+        stageUuid: json['stageUuid'] as String? ?? '',
+        personUuid: json['personUuid'] as String?,
+        qrUrl: json['qrUrl'] as String?,
+      );
 }

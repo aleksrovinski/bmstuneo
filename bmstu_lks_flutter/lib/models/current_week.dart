@@ -48,4 +48,13 @@ class CurrentWeek {
       semesterEnds: json['semesterEnds'] as String? ?? '2027-01-05',
     );
   }
+
+  Map<String, dynamic> toJson() => {
+        'weekNumber': weekNumber,
+        'weekName': weekName,
+        'weekShortName': weekShortName,
+        'term': term,
+        'semesterStarts': semesterStarts,
+        'semesterEnds': semesterEnds,
+      };
 }

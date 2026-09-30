@@ -28,6 +28,16 @@ class FvRecord {
       medGroup: json['medGroup']?.toString(),
     );
   }
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'week': weekDay,
+        'time': time,
+        'teacherName': teacherName,
+        'section': section,
+        'place': place,
+        'medGroup': medGroup,
+      };
 }
 
 class FvTermHistory {
@@ -48,6 +58,12 @@ class FvTermHistory {
       attend: (json['attend'] as num?)?.toInt() ?? 0,
     );
   }
+
+  Map<String, dynamic> toJson() => {
+        'term': term,
+        'points': points,
+        'attend': attend,
+      };
 }
 
 class PhysicalCultureData {
@@ -102,6 +118,18 @@ class PhysicalCultureData {
       studyResults: resultsList,
     );
   }
+
+  Map<String, dynamic> toJson() => {
+        'studyPoints': studyPoints,
+        'studyAttends': studyAttends,
+        'medGroup': medGroup,
+        'medDate': medDate,
+        'medSwim': medSwim,
+        'canBookStudy': canBookStudy,
+        'canBookStudyDisplay': canBookStudyDisplay,
+        'groups': groups.map((g) => g.toJson()).toList(),
+        'studyResults': studyResults.map((r) => r.toJson()).toList(),
+      };
 
   factory PhysicalCultureData.sampleGuest() {
     return PhysicalCultureData(

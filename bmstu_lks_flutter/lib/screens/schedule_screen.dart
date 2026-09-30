@@ -7,6 +7,7 @@ import '../widgets/pair_card.dart';
 import '../widgets/group_picker_sheet.dart';
 import '../widgets/add_custom_lesson_sheet.dart';
 import '../widgets/live_activity_settings_sheet.dart';
+import '../widgets/offline_status_banner.dart';
 import 'teacher_schedule_screen.dart';
 
 class ScheduleScreen extends StatefulWidget {
@@ -195,6 +196,13 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
       ),
       body: Column(
         children: [
+          if (sched.syncStatus != null && !sched.syncStatus!.isLive)
+            OfflineStatusBanner(
+              message: sched.syncStatus?.message,
+              lastUpdated: sched.syncStatus?.lastUpdated,
+              onRetry: sched.isLoading ? null : () => sched.refresh(),
+            ),
+
           // 1. Segmented Button for Week Filter
           Container(
             width: double.infinity,

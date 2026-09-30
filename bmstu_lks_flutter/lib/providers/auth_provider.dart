@@ -1,10 +1,17 @@
+import 'dart:convert';
 import 'package:flutter/foundation.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../models/user_profile.dart';
 import '../services/auth_storage.dart';
 import '../services/bmstu_api_service.dart';
 import '../services/bmstu_groups_catalog.dart';
 
 class AuthProvider with ChangeNotifier {
+  static const _keyCachedProfile = 'bmstu_cached_user_profile_v1';
+  static const _keyIsGuest = 'bmstu_is_guest_v1';
+  static const _keyGuestGroupTitle = 'bmstu_guest_group_title_v1';
+  static const _keyGuestGroupUuid = 'bmstu_guest_group_uuid_v1';
+
   final BmstuApiService apiService;
   final AuthStorage authStorage;
 
@@ -38,9 +45,14 @@ class AuthProvider with ChangeNotifier {
       ? _guestGroupUuid
       : (_userProfile?.groupUuid ?? '');
 
-  void setGuestGroup(String title, String uuid) {
+  Future<void> setGuestGroup(String title, String uuid) async {
     _guestGroupTitle = title;
     _guestGroupUuid = uuid;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_keyGuestGroupTitle, title);
+      await prefs.setString(_keyGuestGroupUuid, uuid);
+    } catch (_) {}
     notifyListeners();
   }
 
@@ -49,17 +61,69 @@ class AuthProvider with ChangeNotifier {
     notifyListeners();
   }
 
-  // Attempt auto-login if credentials exist
+  // Attempt auto-login with offline cache fallback
   Future<bool> checkSavedAuth() async {
     try {
+      final prefs = await SharedPreferences.getInstance();
+
+      // 1. Check if user was in guest mode
+      final wasGuest = prefs.getBool(_keyIsGuest) ?? false;
+      if (wasGuest) {
+        final savedTitle = prefs.getString(_keyGuestGroupTitle);
+        final savedUuid = prefs.getString(_keyGuestGroupUuid);
+        _isGuest = true;
+        _userProfile = null;
+        if (savedTitle != null && savedUuid != null) {
+          _guestGroupTitle = savedTitle;
+          _guestGroupUuid = savedUuid;
+        }
+        notifyListeners();
+        return true;
+      }
+
+      // 2. Check if we have a cached user profile
+      final cachedProfileJson = prefs.getString(_keyCachedProfile);
+      if (cachedProfileJson != null && cachedProfileJson.isNotEmpty) {
+        try {
+          final decoded = jsonDecode(cachedProfileJson) as Map<String, dynamic>;
+          _userProfile = UserProfile.fromJson(decoded);
+          _isGuest = false;
+          notifyListeners();
+        } catch (e) {
+          debugPrint('[AuthProvider] Failed to decode cached profile: $e');
+        }
+      }
+
+      // 3. Check saved credentials
       final creds = await authStorage.getCredentials();
       final user = creds['username'];
       final pass = creds['password'];
 
       if (user != null && user.isNotEmpty && pass != null && pass.isNotEmpty) {
+        // If we already have a cached profile, user is authenticated offline!
+        if (_userProfile != null) {
+          // Attempt silent background refresh without blocking or kicking to login
+          reloginSilently().catchError((e) {
+            debugPrint('[AuthProvider] Background silent relogin failed (likely offline): $e');
+            return false;
+          });
+          return true;
+        }
+
+        // No cached profile yet -> attempt online login
         return await login(user, pass, rememberMe: true);
       }
-    } catch (_) {}
+
+      // If user profile was restored from offline cache, remain authenticated
+      if (_userProfile != null) {
+        return true;
+      }
+    } catch (e) {
+      debugPrint('[AuthProvider] checkSavedAuth error: $e');
+      if (_userProfile != null || _isGuest) {
+        return true;
+      }
+    }
     return false;
   }
 
@@ -76,6 +140,13 @@ class AuthProvider with ChangeNotifier {
           _userProfile = profile;
           _isGuest = false;
           _errorMessage = null;
+
+          // Update cached profile
+          try {
+            final prefs = await SharedPreferences.getInstance();
+            await prefs.setString(_keyCachedProfile, jsonEncode(profile.toJson()));
+          } catch (_) {}
+
           notifyListeners();
           debugPrint('[AuthProvider] Silent relogin succeeded for ${profile.fullName}');
           return true;
@@ -101,6 +172,14 @@ class AuthProvider with ChangeNotifier {
         if (rememberMe) {
           await authStorage.saveCredentials(username.trim(), password);
         }
+
+        // Save cached profile and clear guest flag
+        try {
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.setString(_keyCachedProfile, jsonEncode(profile.toJson()));
+          await prefs.setBool(_keyIsGuest, false);
+        } catch (_) {}
+
         _isLoading = false;
         notifyListeners();
         return true;
@@ -117,7 +196,7 @@ class AuthProvider with ChangeNotifier {
   }
 
   // Enter Guest / Demo mode (schedule only)
-  void enterGuestMode({String? groupTitle, String? groupUuid}) {
+  Future<void> enterGuestMode({String? groupTitle, String? groupUuid}) async {
     _isGuest = true;
     _userProfile = null;
     _errorMessage = null;
@@ -135,6 +214,14 @@ class AuthProvider with ChangeNotifier {
       }
     }
 
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(_keyIsGuest, true);
+      await prefs.setString(_keyGuestGroupTitle, _guestGroupTitle);
+      await prefs.setString(_keyGuestGroupUuid, _guestGroupUuid);
+      await prefs.remove(_keyCachedProfile);
+    } catch (_) {}
+
     notifyListeners();
   }
 
@@ -144,6 +231,13 @@ class AuthProvider with ChangeNotifier {
     _isGuest = false;
     _errorMessage = null;
     await authStorage.clearCredentials();
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(_keyCachedProfile);
+      await prefs.remove(_keyIsGuest);
+      await prefs.remove(_keyGuestGroupTitle);
+      await prefs.remove(_keyGuestGroupUuid);
+    } catch (_) {}
     notifyListeners();
   }
 }

@@ -185,7 +185,7 @@ class BmstuApiService {
   }
 
   // Current Week
-  Future<CurrentWeek> getCurrentWeek() async {
+  Future<CurrentWeek?> getCurrentWeek({bool fallbackToDefault = true}) async {
     try {
       final resp = await _dio.get('$apiBase/schedules/current');
       if (resp.statusCode == 200 && resp.data is Map) {
@@ -195,7 +195,7 @@ class BmstuApiService {
         }
       }
     } catch (_) {}
-    return CurrentWeek.defaultWeek();
+    return fallbackToDefault ? CurrentWeek.defaultWeek() : null;
   }
 
   // Schedule normalization
@@ -295,16 +295,14 @@ class BmstuApiService {
     }
 
     // 2. Try public endpoint
-    try {
-      final pubResp = await _dio.get('$apiBase/schedules/groups/$groupUuid/public');
-      if (pubResp.statusCode == 200 && pubResp.data is Map) {
-        final data = pubResp.data['data'] ?? pubResp.data;
-        final sched = data?['schedule'] as List?;
-        if (sched != null) {
-          return normalizeSchedule(sched);
-        }
+    final pubResp = await _dio.get('$apiBase/schedules/groups/$groupUuid/public');
+    if (pubResp.statusCode == 200 && pubResp.data is Map) {
+      final data = pubResp.data['data'] ?? pubResp.data;
+      final sched = data?['schedule'] as List?;
+      if (sched != null) {
+        return normalizeSchedule(sched);
       }
-    } catch (_) {}
+    }
 
     return [];
   }

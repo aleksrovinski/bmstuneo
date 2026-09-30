@@ -213,8 +213,27 @@ class _TeacherScheduleScreenState extends State<TeacherScheduleScreen> {
       return;
     }
 
+    // Fast preview from cache if empty
+    if (_lessons.isEmpty) {
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        final cached = prefs.getString('teacher_sched_${_currentUuid!}');
+        if (cached != null && cached.isNotEmpty) {
+          final decoded = jsonDecode(cached) as List;
+          final cachedLessons = decoded
+              .map((e) => ScheduleLesson.fromJson(e as Map<String, dynamic>))
+              .toList();
+          if (mounted && cachedLessons.isNotEmpty) {
+            setState(() {
+              _lessons = cachedLessons;
+            });
+          }
+        }
+      } catch (_) {}
+    }
+
     setState(() {
-      _isLoading = true;
+      _isLoading = _lessons.isEmpty;
       _errorMessage = null;
       _isAuthRequired = false;
     });
@@ -246,16 +265,32 @@ class _TeacherScheduleScreenState extends State<TeacherScheduleScreen> {
       if (mounted) {
         setState(() {
           _isLoading = false;
-          _errorMessage = 'Сессия устарела. Требуется повторный вход в ЛКС.';
-          _isAuthRequired = true;
+          if (_lessons.isEmpty) {
+            _errorMessage = 'Сессия устарела. Требуется повторный вход в ЛКС.';
+            _isAuthRequired = true;
+          }
         });
       }
     } catch (e) {
       if (mounted) {
+        if (_lessons.isEmpty) {
+          try {
+            final prefs = await SharedPreferences.getInstance();
+            final cached = prefs.getString('teacher_sched_${_currentUuid!}');
+            if (cached != null && cached.isNotEmpty) {
+              final decoded = jsonDecode(cached) as List;
+              _lessons = decoded
+                  .map((e) => ScheduleLesson.fromJson(e as Map<String, dynamic>))
+                  .toList();
+            }
+          } catch (_) {}
+        }
         setState(() {
           _isLoading = false;
           if (_lessons.isEmpty) {
             _errorMessage = 'Не удалось загрузить расписание. Проверьте сеть.';
+          } else {
+            _errorMessage = null;
           }
         });
       }

@@ -1,4 +1,6 @@
+import 'dart:convert';
 import 'package:flutter/foundation.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../models/discipline_progress.dart';
 import '../models/sync_status.dart';
 import '../services/bmstu_api_service.dart';
@@ -80,6 +82,39 @@ class ProgressProvider with ChangeNotifier {
     notifyListeners();
   }
 
+  static const _cacheProgressPrefix = 'cached_progress_v1_';
+  static const _cacheProgressTimePrefix = 'cached_progress_time_v1_';
+
+  Future<void> _saveProgressToCache(String stageUuid, List<DisciplineProgress> disciplines) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final listJson = disciplines.map((d) => d.toJson()).toList();
+      await prefs.setString('$_cacheProgressPrefix$stageUuid', jsonEncode(listJson));
+      await prefs.setString('$_cacheProgressTimePrefix$stageUuid', DateTime.now().toIso8601String());
+    } catch (_) {}
+  }
+
+  Future<List<DisciplineProgress>?> _loadProgressFromCache(String stageUuid) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString('$_cacheProgressPrefix$stageUuid');
+      if (raw == null || raw.isEmpty) return null;
+      final decoded = jsonDecode(raw) as List;
+      return decoded.map((e) => DisciplineProgress.fromJson(e as Map<String, dynamic>)).toList();
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<DateTime?> _loadCacheTimestamp(String stageUuid) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString('$_cacheProgressTimePrefix$stageUuid');
+      if (raw != null) return DateTime.tryParse(raw);
+    } catch (_) {}
+    return null;
+  }
+
   Future<void> loadProgress(String stageUuid, {bool isRetry = false}) async {
     if (stageUuid.isEmpty) {
       _disciplines = [];
@@ -89,6 +124,23 @@ class ProgressProvider with ChangeNotifier {
     }
 
     _stageUuid = stageUuid;
+
+    // Fast offline preview
+    if (_disciplines.isEmpty) {
+      final cached = await _loadProgressFromCache(stageUuid);
+      if (cached != null && cached.isNotEmpty) {
+        _disciplines = cached;
+        final cachedTime = await _loadCacheTimestamp(stageUuid);
+        _syncStatus = SyncStatus(
+          lastUpdated: cachedTime ?? DateTime.now(),
+          isLive: false,
+          itemCount: _disciplines.length,
+          message: 'Офлайн-режим (сохранённая копия)',
+        );
+        notifyListeners();
+      }
+    }
+
     if (!isRetry) {
       _isLoading = true;
       _errorMessage = null;
@@ -96,7 +148,16 @@ class ProgressProvider with ChangeNotifier {
     }
 
     try {
-      _disciplines = await apiService.getProgress(stageUuid);
+      final fresh = await apiService.getProgress(stageUuid);
+      if (fresh.isNotEmpty) {
+        _disciplines = fresh;
+        await _saveProgressToCache(stageUuid, fresh);
+      } else if (_disciplines.isEmpty) {
+        final cached = await _loadProgressFromCache(stageUuid);
+        if (cached != null && cached.isNotEmpty) {
+          _disciplines = cached;
+        }
+      }
       _syncStatus = SyncStatus(
         lastUpdated: DateTime.now(),
         isLive: true,
@@ -114,13 +175,23 @@ class ProgressProvider with ChangeNotifier {
           return await loadProgress(_stageUuid, isRetry: true);
         }
       }
-      _errorMessage = 'Сессия ЛКС устарела. Не удалось обновить прогресс.';
+
+      if (_disciplines.isEmpty) {
+        final cached = await _loadProgressFromCache(stageUuid);
+        if (cached != null && cached.isNotEmpty) {
+          _disciplines = cached;
+        }
+      }
+      final cachedTime = await _loadCacheTimestamp(stageUuid);
       _syncStatus = SyncStatus(
-        lastUpdated: DateTime.now(),
+        lastUpdated: cachedTime ?? DateTime.now(),
         isLive: false,
         itemCount: _disciplines.length,
-        message: _errorMessage,
+        message: _disciplines.isNotEmpty
+            ? 'Офлайн-режим (сохранённая копия)'
+            : 'Сессия ЛКС устарела. Не удалось обновить прогресс.',
       );
+      _errorMessage = _disciplines.isNotEmpty ? null : 'Сессия ЛКС устарела. Не удалось обновить прогресс.';
       _isLoading = false;
       notifyListeners();
     } catch (e) {
@@ -132,13 +203,23 @@ class ProgressProvider with ChangeNotifier {
           return await loadProgress(_stageUuid, isRetry: true);
         }
       }
-      _errorMessage = e.toString().replaceAll('Exception: ', '');
+
+      if (_disciplines.isEmpty) {
+        final cached = await _loadProgressFromCache(stageUuid);
+        if (cached != null && cached.isNotEmpty) {
+          _disciplines = cached;
+        }
+      }
+      final cachedTime = await _loadCacheTimestamp(stageUuid);
       _syncStatus = SyncStatus(
-        lastUpdated: DateTime.now(),
+        lastUpdated: cachedTime ?? DateTime.now(),
         isLive: false,
         itemCount: _disciplines.length,
-        message: 'Ошибка обновления: $_errorMessage',
+        message: _disciplines.isNotEmpty
+            ? 'Офлайн-режим (сохранённая копия)'
+            : 'Ошибка обновления: $e',
       );
+      _errorMessage = _disciplines.isNotEmpty ? null : e.toString().replaceAll('Exception: ', '');
       _isLoading = false;
       notifyListeners();
     }

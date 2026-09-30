@@ -264,6 +264,36 @@ class ControlEvent {
       return setDate;
     }
   }
+
+  Map<String, dynamic> toJson() => {
+        'type': type,
+        'title': title,
+        'week': week,
+        'value': value,
+        'stage': stage,
+        'passStatus': passStatus,
+        'setDate': setDate,
+        'disciplineTitle': disciplineTitle,
+        'controlIndex': controlIndex,
+        'controlId': controlId,
+        'points': points,
+      };
+
+  factory ControlEvent.fromJson(Map<String, dynamic> json) => ControlEvent(
+        type: json['type'] as String? ?? '',
+        title: json['title']?.toString() ?? '',
+        week: json['week'] as int? ?? 1,
+        value: json['value'],
+        stage: json['stage']?.toString(),
+        passStatus: json['passStatus']?.toString(),
+        setDate: json['setDate']?.toString(),
+        disciplineTitle: json['disciplineTitle']?.toString() ?? '',
+        controlIndex: json['controlIndex'] as int? ?? 1,
+        controlId: json['controlId']?.toString(),
+        points: json['points'] is Map
+            ? Map<String, dynamic>.from(json['points'] as Map)
+            : null,
+      );
 }
 
 class DisciplineProgress {
@@ -296,4 +326,31 @@ class DisciplineProgress {
     }
     return null;
   }
+
+  Map<String, dynamic> toJson() => {
+        'title': title,
+        'disciplineUuid': disciplineUuid,
+        'points': points,
+        'controls': controls.map((c) => c.toJson()).toList(),
+        'laboratory': laboratory.map((l) => l.toJson()).toList(),
+        'seminars': seminars.map((s) => s.toJson()).toList(),
+      };
+
+  factory DisciplineProgress.fromJson(Map<String, dynamic> json) =>
+      DisciplineProgress(
+        title: json['title'] as String? ?? 'Дисциплина',
+        disciplineUuid: json['disciplineUuid'] as String?,
+        points: json['points'] is Map
+            ? Map<String, dynamic>.from(json['points'] as Map)
+            : {},
+        controls: (json['controls'] as List? ?? [])
+            .map((c) => ControlEvent.fromJson(c as Map<String, dynamic>))
+            .toList(),
+        laboratory: (json['laboratory'] as List? ?? [])
+            .map((l) => ControlEvent.fromJson(l as Map<String, dynamic>))
+            .toList(),
+        seminars: (json['seminars'] as List? ?? [])
+            .map((s) => ControlEvent.fromJson(s as Map<String, dynamic>))
+            .toList(),
+      );
 }

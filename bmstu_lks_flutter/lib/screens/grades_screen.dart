@@ -7,6 +7,7 @@ import '../widgets/grades/grades_category_tabs.dart';
 import '../widgets/grades/grades_status_legend.dart';
 import '../widgets/grades/grades_filter_bar.dart';
 import '../widgets/grades/discipline_card.dart';
+import '../widgets/offline_status_banner.dart';
 
 class GradesScreen extends StatefulWidget {
   const GradesScreen({super.key});
@@ -88,6 +89,13 @@ class _GradesScreenState extends State<GradesScreen> {
       ),
       body: Column(
         children: [
+          if (prog.syncStatus != null && !prog.syncStatus!.isLive)
+            OfflineStatusBanner(
+              message: prog.syncStatus?.message,
+              lastUpdated: prog.syncStatus?.lastUpdated,
+              onRetry: prog.isLoading ? null : () => prog.refresh(),
+            ),
+
           // 1. Category Switcher Tabs: Текущий / Лабораторные / Семинары
           GradesCategoryTabs(
             activeCategory: prog.activeCategory,
