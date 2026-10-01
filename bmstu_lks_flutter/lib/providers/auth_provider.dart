@@ -26,7 +26,9 @@ class AuthProvider with ChangeNotifier {
   AuthProvider({
     required this.apiService,
     required this.authStorage,
-  });
+  }) {
+    apiService.onSilentRelogin = () => reloginSilently();
+  }
 
   UserProfile? get userProfile => _userProfile;
   bool get isGuest => _isGuest;

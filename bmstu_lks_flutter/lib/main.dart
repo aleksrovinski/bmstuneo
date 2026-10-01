@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:dynamic_color/dynamic_color.dart';
 import 'services/auth_storage.dart';
 import 'services/bmstu_api_service.dart';
@@ -8,6 +7,8 @@ import 'providers/auth_provider.dart';
 import 'providers/schedule_provider.dart';
 import 'providers/progress_provider.dart';
 import 'providers/fv_provider.dart';
+import 'providers/theme_provider.dart';
+import 'providers/favorites_provider.dart';
 import 'screens/login_screen.dart';
 import 'screens/main_navigation_screen.dart';
 
@@ -22,6 +23,12 @@ void main() {
   runApp(
     MultiProvider(
       providers: [
+        ChangeNotifierProvider(
+          create: (_) => ThemeProvider(),
+        ),
+        ChangeNotifierProvider(
+          create: (_) => FavoritesProvider(),
+        ),
         ChangeNotifierProvider(
           create: (_) => AuthProvider(
             apiService: apiService,
@@ -56,209 +63,22 @@ void main() {
 class BmstuApp extends StatelessWidget {
   const BmstuApp({super.key});
 
-  // Default brand seed color (Bauman Blue) when dynamic colors are unavailable
-  static const _defaultBrandSeed = Color(0xFF0070F3);
-
   @override
   Widget build(BuildContext context) {
+    ThemeProvider? themeProv;
+    try {
+      themeProv = context.watch<ThemeProvider>();
+    } catch (_) {}
+    themeProv ??= ThemeProvider();
+
     return DynamicColorBuilder(
       builder: (ColorScheme? lightDynamic, ColorScheme? darkDynamic) {
-        ColorScheme lightColorScheme;
-        ColorScheme darkColorScheme;
-
-        if (lightDynamic != null && darkDynamic != null) {
-          // Dynamic colors from Android 12+ wallpaper (Material You Monet)
-          lightColorScheme = lightDynamic.harmonized();
-          darkColorScheme = darkDynamic.harmonized();
-        } else {
-          // Fallback brand color scheme
-          lightColorScheme = ColorScheme.fromSeed(
-            seedColor: _defaultBrandSeed,
-            brightness: Brightness.light,
-          );
-          darkColorScheme = ColorScheme.fromSeed(
-            seedColor: _defaultBrandSeed,
-            brightness: Brightness.dark,
-          );
-        }
-
-        final lightTextTheme = GoogleFonts.interTextTheme(ThemeData.light().textTheme);
-        final darkTextTheme = GoogleFonts.interTextTheme(ThemeData.dark().textTheme);
-
         return MaterialApp(
           title: AppVersion.appName,
           debugShowCheckedModeBanner: false,
-          themeMode: ThemeMode.system,
-          // Material You Light Theme (Expressive)
-          theme: ThemeData(
-            useMaterial3: true,
-            brightness: Brightness.light,
-            colorScheme: lightColorScheme,
-            scaffoldBackgroundColor: lightColorScheme.surface,
-            appBarTheme: AppBarTheme(
-              backgroundColor: lightColorScheme.surface,
-              foregroundColor: lightColorScheme.onSurface,
-              elevation: 0,
-              scrolledUnderElevation: 2,
-              surfaceTintColor: lightColorScheme.surfaceTint,
-              centerTitle: false,
-            ),
-            cardTheme: CardThemeData(
-              elevation: 0,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-              color: lightColorScheme.surfaceContainerLow,
-              clipBehavior: Clip.antiAlias,
-            ),
-            filledButtonTheme: FilledButtonThemeData(
-              style: FilledButton.styleFrom(
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-              ),
-            ),
-            elevatedButtonTheme: ElevatedButtonThemeData(
-              style: ElevatedButton.styleFrom(
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                elevation: 0,
-              ),
-            ),
-            outlinedButtonTheme: OutlinedButtonThemeData(
-              style: OutlinedButton.styleFrom(
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-              ),
-            ),
-            navigationBarTheme: NavigationBarThemeData(
-              height: 72,
-              indicatorColor: lightColorScheme.secondaryContainer,
-              indicatorShape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-              backgroundColor: lightColorScheme.surface,
-              surfaceTintColor: lightColorScheme.surfaceTint,
-              iconTheme: WidgetStateProperty.resolveWith((states) {
-                if (states.contains(WidgetState.selected)) {
-                  return IconThemeData(color: lightColorScheme.onSecondaryContainer, size: 26);
-                }
-                return IconThemeData(color: lightColorScheme.onSurfaceVariant, size: 24);
-              }),
-              labelTextStyle: WidgetStateProperty.resolveWith((states) {
-                if (states.contains(WidgetState.selected)) {
-                  return TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: 0.1,
-                    color: lightColorScheme.onSurface,
-                  );
-                }
-                return TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w500,
-                  letterSpacing: 0.1,
-                  color: lightColorScheme.onSurfaceVariant,
-                );
-              }),
-              labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
-            ),
-            inputDecorationTheme: InputDecorationTheme(
-              filled: true,
-              fillColor: lightColorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(16),
-                borderSide: BorderSide.none,
-              ),
-              enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(16),
-                borderSide: BorderSide.none,
-              ),
-              focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(16),
-                borderSide: BorderSide(color: lightColorScheme.primary, width: 2),
-              ),
-            ),
-            textTheme: lightTextTheme,
-          ),
-          // Material You Dark Theme (Expressive)
-          darkTheme: ThemeData(
-            useMaterial3: true,
-            brightness: Brightness.dark,
-            colorScheme: darkColorScheme,
-            scaffoldBackgroundColor: darkColorScheme.surface,
-            appBarTheme: AppBarTheme(
-              backgroundColor: darkColorScheme.surface,
-              foregroundColor: darkColorScheme.onSurface,
-              elevation: 0,
-              scrolledUnderElevation: 2,
-              surfaceTintColor: darkColorScheme.surfaceTint,
-              centerTitle: false,
-            ),
-            cardTheme: CardThemeData(
-              elevation: 0,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-              color: darkColorScheme.surfaceContainerLow,
-              clipBehavior: Clip.antiAlias,
-            ),
-            filledButtonTheme: FilledButtonThemeData(
-              style: FilledButton.styleFrom(
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-              ),
-            ),
-            elevatedButtonTheme: ElevatedButtonThemeData(
-              style: ElevatedButton.styleFrom(
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                elevation: 0,
-              ),
-            ),
-            outlinedButtonTheme: OutlinedButtonThemeData(
-              style: OutlinedButton.styleFrom(
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-              ),
-            ),
-            navigationBarTheme: NavigationBarThemeData(
-              height: 72,
-              indicatorColor: darkColorScheme.secondaryContainer,
-              indicatorShape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-              backgroundColor: darkColorScheme.surface,
-              surfaceTintColor: darkColorScheme.surfaceTint,
-              iconTheme: WidgetStateProperty.resolveWith((states) {
-                if (states.contains(WidgetState.selected)) {
-                  return IconThemeData(color: darkColorScheme.onSecondaryContainer, size: 26);
-                }
-                return IconThemeData(color: darkColorScheme.onSurfaceVariant, size: 24);
-              }),
-              labelTextStyle: WidgetStateProperty.resolveWith((states) {
-                if (states.contains(WidgetState.selected)) {
-                  return TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: 0.1,
-                    color: darkColorScheme.onSurface,
-                  );
-                }
-                return TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w500,
-                  letterSpacing: 0.1,
-                  color: darkColorScheme.onSurfaceVariant,
-                );
-              }),
-              labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
-            ),
-            inputDecorationTheme: InputDecorationTheme(
-              filled: true,
-              fillColor: darkColorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(16),
-                borderSide: BorderSide.none,
-              ),
-              enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(16),
-                borderSide: BorderSide.none,
-              ),
-              focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(16),
-                borderSide: BorderSide(color: darkColorScheme.primary, width: 2),
-              ),
-            ),
-            textTheme: darkTextTheme,
-          ),
+          themeMode: themeProv!.materialThemeMode,
+          theme: themeProv.buildLightTheme(lightDynamic),
+          darkTheme: themeProv.buildDarkTheme(darkDynamic),
           home: const AuthGate(),
         );
       },

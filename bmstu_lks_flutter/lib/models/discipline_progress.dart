@@ -327,6 +327,60 @@ class DisciplineProgress {
     return null;
   }
 
+  int? get totalPoints {
+    final raw = points['point_all'];
+    if (raw is num) return raw.toInt();
+    if (raw is String) return int.tryParse(raw);
+    return null;
+  }
+
+  /// Estimated 5-point grade (5, 4, 3, 2 or null if in progress)
+  int? get estimatedGrade {
+    final tp = totalPoints;
+    if (tp == null || tp == 0) {
+      // Check sum of module values
+      final modules = controls.where((c) => c.type == 'М' && c.value != null).toList();
+      if (modules.isNotEmpty) {
+        int sum = 0;
+        for (final m in modules) {
+          final val = m.value;
+          if (val is num) {
+            sum += val.toInt();
+          } else if (val is String) {
+            sum += int.tryParse(val) ?? 0;
+          }
+        }
+        if (sum > 0) {
+          if (sum >= 85) return 5;
+          if (sum >= 71) return 4;
+          if (sum >= 60) return 3;
+          return 2;
+        }
+      }
+      return null;
+    }
+    if (tp >= 85) return 5;
+    if (tp >= 71) return 4;
+    if (tp >= 60) return 3;
+    return 2;
+  }
+
+  String get gradeDisplay {
+    final grade = estimatedGrade;
+    if (grade == 5) return 'Отлично (5)';
+    if (grade == 4) return 'Хорошо (4)';
+    if (grade == 3) return 'Удовл. (3)';
+    if (grade == 2) return 'Неудовл. (2)';
+    if (totalPoints != null && totalPoints! > 0) return '$totalPoints б.';
+    return 'В процессе';
+  }
+
+  bool get isPassed {
+    final g = estimatedGrade;
+    if (g != null && g >= 3) return true;
+    return false;
+  }
+
   Map<String, dynamic> toJson() => {
         'title': title,
         'disciplineUuid': disciplineUuid,

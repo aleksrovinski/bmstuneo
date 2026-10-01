@@ -8,6 +8,7 @@ import '../widgets/grades/grades_status_legend.dart';
 import '../widgets/grades/grades_filter_bar.dart';
 import '../widgets/grades/discipline_card.dart';
 import '../widgets/offline_status_banner.dart';
+import 'gradebook_screen.dart';
 
 class GradesScreen extends StatefulWidget {
   const GradesScreen({super.key});
@@ -79,6 +80,15 @@ class _GradesScreenState extends State<GradesScreen> {
           ],
         ),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.menu_book_rounded),
+            tooltip: 'Электронная зачётка и GPA',
+            onPressed: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const GradebookScreen()),
+              );
+            },
+          ),
           IconButton(
             icon: const Icon(Icons.refresh_rounded),
             tooltip: 'Обновить прогресс',

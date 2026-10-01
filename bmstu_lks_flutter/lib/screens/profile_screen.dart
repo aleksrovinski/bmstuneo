@@ -1,18 +1,59 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:intl/intl.dart';
 import '../providers/auth_provider.dart';
 import '../providers/schedule_provider.dart';
 import '../providers/progress_provider.dart';
-import '../widgets/qr_pass_dialog.dart';
+import '../providers/theme_provider.dart';
 import '../services/widget_sync_service.dart';
+import '../services/cache_service.dart';
 import '../constants/app_version.dart';
 import '../widgets/bmstu_neo_logo.dart';
+import '../widgets/student_id_card.dart';
+import '../models/user_profile.dart';
+import 'gradebook_screen.dart';
 
-class ProfileScreen extends StatelessWidget {
+class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
+
+  @override
+  State<ProfileScreen> createState() => _ProfileScreenState();
+}
+
+class _ProfileScreenState extends State<ProfileScreen> {
+  CacheStats? _cacheStats;
+  bool _isLoadingCacheStats = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadCacheStats();
+  }
+
+  Future<void> _loadCacheStats() async {
+    setState(() => _isLoadingCacheStats = true);
+    final stats = await AppCacheManager.instance.getStats();
+    if (mounted) {
+      setState(() {
+        _cacheStats = stats;
+        _isLoadingCacheStats = false;
+      });
+    }
+  }
+
+  Future<void> _clearCache() async {
+    await AppCacheManager.instance.clearAll();
+    await _loadCacheStats();
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Кэш данных успешно очищен'),
+          backgroundColor: Color(0xFF10B981),
+        ),
+      );
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -21,8 +62,22 @@ class ProfileScreen extends StatelessWidget {
     final auth = context.watch<AuthProvider>();
     final sched = context.watch<ScheduleProvider>();
     final prog = context.watch<ProgressProvider>();
+    ThemeProvider? themeProv;
+    try {
+      themeProv = context.watch<ThemeProvider>();
+    } catch (_) {}
+    themeProv ??= ThemeProvider();
 
-    final user = auth.userProfile;
+    final user = auth.userProfile ??
+        UserProfile(
+          lastName: 'Студент',
+          firstName: 'МГТУ',
+          middleName: '',
+          groupTitle: auth.currentGroupTitle,
+          groupUuid: auth.currentGroupUuid,
+          stageUuid: '',
+        );
+
     final timeFormat = DateFormat('HH:mm:ss dd.MM.yyyy');
 
     return Scaffold(
@@ -34,190 +89,22 @@ class ProfileScreen extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // Student Card
-            Container(
-              padding: const EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [
-                    theme.colorScheme.primary,
-                    theme.colorScheme.tertiary,
-                  ],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                ),
-                borderRadius: BorderRadius.circular(20),
-                boxShadow: [
-                  BoxShadow(
-                    color: theme.colorScheme.primary.withValues(alpha: 0.25),
-                    blurRadius: 16,
-                    offset: const Offset(0, 6),
-                  ),
-                ],
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Container(
-                        width: 56,
-                        height: 56,
-                        decoration: BoxDecoration(
-                          color: theme.colorScheme.onPrimary.withValues(alpha: 0.2),
-                          shape: BoxShape.circle,
-                        ),
-                        child: Center(
-                          child: Text(
-                            auth.isGuest
-                                ? 'Г'
-                                : (user?.firstName.isNotEmpty == true ? user!.firstName[0] : 'Б'),
-                            style: TextStyle(
-                              fontSize: 24,
-                              fontWeight: FontWeight.w800,
-                              color: theme.colorScheme.onPrimary,
-                            ),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 16),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              auth.isGuest
-                                  ? 'Гостевой доступ'
-                                  : (user != null ? user.fullName : 'Студент'),
-                              style: TextStyle(
-                                fontSize: 18,
-                                fontWeight: FontWeight.w800,
-                                color: theme.colorScheme.onPrimary,
-                              ),
-                            ),
-                            const SizedBox(height: 4),
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                              decoration: BoxDecoration(
-                                color: theme.colorScheme.onPrimary.withValues(alpha: 0.2),
-                                borderRadius: BorderRadius.circular(6),
-                              ),
-                              child: Text(
-                                auth.isGuest
-                                    ? 'Группа: ${auth.currentGroupTitle}'
-                                    : 'Группа: ${user?.groupTitle ?? "Не указана"}',
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w600,
-                                  color: theme.colorScheme.onPrimary,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
+            // 1. Digital Student ID Card
+            StudentIdCard(
+              user: user,
+              isGuest: auth.isGuest,
             ),
             const SizedBox(height: 20),
 
-            // Pass Preview Section
-            if (auth.isFullAuth && user?.qrUrl != null && user!.qrUrl!.isNotEmpty) ...[
-              Text(
-                'Электронный пропуск МГТУ',
-                style: TextStyle(
-                  fontSize: 15,
-                  fontWeight: FontWeight.w700,
-                  color: theme.colorScheme.onSurface,
-                ),
-              ),
-              const SizedBox(height: 8),
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: theme.colorScheme.surfaceContainer,
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(
-                    color: theme.colorScheme.outlineVariant.withValues(alpha: 0.6),
-                  ),
-                ),
-                child: Row(
-                  children: [
-                    Container(
-                      width: 80,
-                      height: 80,
-                      padding: const EdgeInsets.all(4),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: Colors.black12),
-                      ),
-                      child: CachedNetworkImage(
-                        imageUrl: user.qrUrl!,
-                        fit: BoxFit.contain,
-                        placeholder: (context, url) => const Center(
-                          child: SizedBox(
-                            width: 20,
-                            height: 20,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          ),
-                        ),
-                        errorWidget: (context, url, error) => const Icon(
-                          Icons.broken_image,
-                          color: Colors.black45,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 16),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'QR-код для турникета',
-                            style: TextStyle(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w700,
-                              color: theme.colorScheme.onSurface,
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            'Действует на всех проходных кампуса',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: theme.colorScheme.onSurfaceVariant,
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          ElevatedButton.icon(
-                            onPressed: () => QrPassDialog.show(
-                              context,
-                              qrUrl: user.qrUrl!,
-                              studentName: user.fullName,
-                              groupTitle: user.groupTitle,
-                            ),
-                            icon: const Icon(Icons.fullscreen_rounded, size: 18),
-                            label: const Text('Открыть крупно', style: TextStyle(fontSize: 12)),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: theme.colorScheme.primary,
-                              foregroundColor: theme.colorScheme.onPrimary,
-                              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 20),
-            ],
+            // 2. Electronic Gradebook Quick Card
+            _buildGradebookCard(context, auth, prog),
+            const SizedBox(height: 20),
 
-            // Real-Time Sync Section
+            // 3. Theme & Styling Section
+            _buildThemeSection(context, themeProv),
+            const SizedBox(height: 20),
+
+            // 4. Real-Time Sync Section
             Text(
               'Синхронизация с серверами МГТУ',
               style: TextStyle(
@@ -267,7 +154,7 @@ class ProfileScreen extends StatelessWidget {
                           ? null
                           : () async {
                               await sched.refresh();
-                              if (auth.isFullAuth && user?.stageUuid != null) {
+                              if (auth.isFullAuth && user.stageUuid.isNotEmpty) {
                                 await prog.refresh();
                               }
                               if (context.mounted) {
@@ -294,7 +181,11 @@ class ProfileScreen extends StatelessWidget {
             ),
             const SizedBox(height: 20),
 
-            // Home Screen Widget Section
+            // 5. Cache & Memory Section
+            _buildCacheSection(context),
+            const SizedBox(height: 20),
+
+            // 6. Home Screen Widget Section
             Text(
               'Виджет на рабочий стол',
               style: TextStyle(
@@ -411,7 +302,7 @@ class ProfileScreen extends StatelessWidget {
             ),
             const SizedBox(height: 20),
 
-            // About BMSTU neo Card
+            // 7. About BMSTU neo Card
             Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
@@ -473,7 +364,7 @@ class ProfileScreen extends StatelessWidget {
             ),
             const SizedBox(height: 20),
 
-            // Logout Button
+            // 8. Logout Button
             SizedBox(
               width: double.infinity,
               child: ElevatedButton.icon(
@@ -498,6 +389,298 @@ class ProfileScreen extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildGradebookCard(BuildContext context, AuthProvider auth, ProgressProvider prog) {
+    final theme = Theme.of(context);
+    final gpa = prog.gpa;
+    final status = prog.scholarshipStatus;
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surfaceContainer,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: theme.colorScheme.outlineVariant.withValues(alpha: 0.6),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.primaryContainer,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Icon(Icons.menu_book_rounded, color: theme.colorScheme.onPrimaryContainer, size: 22),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Электронная зачётная книжка',
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w800,
+                        color: theme.colorScheme.onSurface,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      auth.isGuest
+                          ? 'Доступно после авторизации в ЛКС'
+                          : 'Средний балл: ${gpa > 0 ? gpa.toStringAsFixed(2) : "—"} • ${status.title}',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: auth.isGuest
+                  ? null
+                  : () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute(builder: (_) => const GradebookScreen()),
+                      );
+                    },
+              icon: const Icon(Icons.visibility_rounded, size: 18),
+              label: const Text('Открыть зачётку и семестры', style: TextStyle(fontWeight: FontWeight.w700)),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: theme.colorScheme.primary,
+                side: BorderSide(color: theme.colorScheme.primary.withValues(alpha: 0.5)),
+                padding: const EdgeInsets.symmetric(vertical: 11),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildThemeSection(BuildContext context, ThemeProvider themeProv) {
+    final theme = Theme.of(context);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Оформление и тема',
+          style: TextStyle(
+            fontSize: 15,
+            fontWeight: FontWeight.w700,
+            color: theme.colorScheme.onSurface,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: theme.colorScheme.surfaceContainer,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+              color: theme.colorScheme.outlineVariant.withValues(alpha: 0.6),
+            ),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Theme Mode Segmented Button
+              Text(
+                'Режим темы',
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                  color: theme.colorScheme.onSurface,
+                ),
+              ),
+              const SizedBox(height: 8),
+              SegmentedButton<AppThemeMode>(
+                segments: const [
+                  ButtonSegment(
+                    value: AppThemeMode.system,
+                    label: Text('Авто', style: TextStyle(fontSize: 11)),
+                    icon: Icon(Icons.brightness_auto_rounded, size: 16),
+                  ),
+                  ButtonSegment(
+                    value: AppThemeMode.light,
+                    label: Text('Светлая', style: TextStyle(fontSize: 11)),
+                    icon: Icon(Icons.light_mode_rounded, size: 16),
+                  ),
+                  ButtonSegment(
+                    value: AppThemeMode.dark,
+                    label: Text('Тёмная', style: TextStyle(fontSize: 11)),
+                    icon: Icon(Icons.dark_mode_rounded, size: 16),
+                  ),
+                  ButtonSegment(
+                    value: AppThemeMode.oled,
+                    label: Text('OLED', style: TextStyle(fontSize: 11)),
+                    icon: Icon(Icons.contrast_rounded, size: 16),
+                  ),
+                ],
+                selected: {themeProv.themeMode},
+                onSelectionChanged: (set) => themeProv.setThemeMode(set.first),
+              ),
+              const SizedBox(height: 16),
+              Divider(color: theme.colorScheme.outlineVariant.withValues(alpha: 0.4), height: 1),
+              const SizedBox(height: 14),
+
+              // Accent Color Palette
+              Text(
+                'Цветовой акцент интерфейса',
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                  color: theme.colorScheme.onSurface,
+                ),
+              ),
+              const SizedBox(height: 10),
+              SizedBox(
+                height: 48,
+                child: ListView.separated(
+                  scrollDirection: Axis.horizontal,
+                  itemCount: AppAccentColor.values.length,
+                  separatorBuilder: (_, index) => const SizedBox(width: 10),
+                  itemBuilder: (context, idx) {
+                    final item = AppAccentColor.values[idx];
+                    final isSelected = themeProv.accentColor == item;
+
+                    return GestureDetector(
+                      onTap: () => themeProv.setAccentColor(item),
+                      child: Tooltip(
+                        message: item.title,
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 200),
+                          width: 44,
+                          height: 44,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: item.color,
+                            border: Border.all(
+                              color: isSelected ? Colors.white : Colors.transparent,
+                              width: 3,
+                            ),
+                            boxShadow: [
+                              if (isSelected)
+                                BoxShadow(
+                                  color: item.color.withValues(alpha: 0.5),
+                                  blurRadius: 8,
+                                  offset: const Offset(0, 2),
+                                ),
+                            ],
+                          ),
+                          child: isSelected
+                              ? const Center(
+                                  child: Icon(Icons.check_rounded, color: Colors.white, size: 22),
+                                )
+                              : null,
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildCacheSection(BuildContext context) {
+    final theme = Theme.of(context);
+    final stats = _cacheStats;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Память и кэш данных',
+          style: TextStyle(
+            fontSize: 15,
+            fontWeight: FontWeight.w700,
+            color: theme.colorScheme.onSurface,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: theme.colorScheme.surfaceContainer,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+              color: theme.colorScheme.outlineVariant.withValues(alpha: 0.6),
+            ),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    'Размер сохранённого кэша',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: theme.colorScheme.onSurface,
+                    ),
+                  ),
+                  Text(
+                    _isLoadingCacheStats ? '...' : (stats?.formattedTotalSize ?? '0 КБ'),
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w800,
+                      color: theme.colorScheme.primary,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Кэш обеспечивает мгновенный запуск и полную работу расписания и зачётки в подвальных аудиториях без интернета.',
+                style: TextStyle(
+                  fontSize: 11.5,
+                  color: theme.colorScheme.onSurfaceVariant,
+                  height: 1.3,
+                ),
+              ),
+              const SizedBox(height: 14),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: _clearCache,
+                  icon: const Icon(Icons.cleaning_services_rounded, size: 18),
+                  label: const Text('Очистить локальный кэш'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: theme.colorScheme.error,
+                    side: BorderSide(color: theme.colorScheme.error.withValues(alpha: 0.5)),
+                    padding: const EdgeInsets.symmetric(vertical: 10),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 
@@ -684,4 +867,3 @@ class ProfileScreen extends StatelessWidget {
     );
   }
 }
-

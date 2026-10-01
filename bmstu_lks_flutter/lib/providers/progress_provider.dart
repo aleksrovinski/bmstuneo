@@ -1,5 +1,5 @@
 import 'dart:convert';
-import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/discipline_progress.dart';
 import '../models/sync_status.dart';
@@ -32,6 +32,39 @@ enum ProgressStatusFilter {
   notIssued,  // Не выдано
 }
 
+enum ScholarshipStatus {
+  excellent,   // Все отлично -> Претендент на ПГАС
+  good,        // 4 и 5 -> ГАС (академическая стипендия)
+  atRisk,      // Тройки или задолженности -> Без стипендии
+  inProgress;  // Сессия еще не закрыта
+
+  String get title {
+    switch (this) {
+      case ScholarshipStatus.excellent:
+        return 'Повышенная стипендия (ПГАС)';
+      case ScholarshipStatus.good:
+        return 'Академическая стипендия (ГАС)';
+      case ScholarshipStatus.atRisk:
+        return 'Без академической стипендии';
+      case ScholarshipStatus.inProgress:
+        return 'Идёт учебный семестр';
+    }
+  }
+
+  Color get color {
+    switch (this) {
+      case ScholarshipStatus.excellent:
+        return const Color(0xFF8B5CF6);
+      case ScholarshipStatus.good:
+        return const Color(0xFF10B981);
+      case ScholarshipStatus.atRisk:
+        return const Color(0xFFEF4444);
+      case ScholarshipStatus.inProgress:
+        return const Color(0xFF3B82F6);
+    }
+  }
+}
+
 class ProgressProvider with ChangeNotifier {
   final BmstuApiService apiService;
 
@@ -61,6 +94,35 @@ class ProgressProvider with ChangeNotifier {
   ProgressStatusFilter get statusFilter => _statusFilter;
   DeadlineTypeFilter get typeFilter => _typeFilter;
   String get searchQuery => _searchQuery;
+
+  double get gpa {
+    final graded = _disciplines.map((d) => d.estimatedGrade).whereType<int>().toList();
+    if (graded.isEmpty) return 0.0;
+    final sum = graded.reduce((a, b) => a + b);
+    return sum / graded.length;
+  }
+
+  int get countGrade5 => _disciplines.where((d) => d.estimatedGrade == 5).length;
+  int get countGrade4 => _disciplines.where((d) => d.estimatedGrade == 4).length;
+  int get countGrade3 => _disciplines.where((d) => d.estimatedGrade == 3).length;
+  int get countGrade2 => _disciplines.where((d) => d.estimatedGrade == 2).length;
+
+  ScholarshipStatus get scholarshipStatus {
+    if (_disciplines.isEmpty) return ScholarshipStatus.inProgress;
+    final graded = _disciplines.map((d) => d.estimatedGrade).whereType<int>().toList();
+    if (graded.isEmpty) return ScholarshipStatus.inProgress;
+
+    if (graded.any((g) => g <= 3)) {
+      return ScholarshipStatus.atRisk;
+    }
+    if (graded.every((g) => g == 5)) {
+      return ScholarshipStatus.excellent;
+    }
+    if (graded.every((g) => g >= 4)) {
+      return ScholarshipStatus.good;
+    }
+    return ScholarshipStatus.inProgress;
+  }
 
   void setActiveCategory(ProgressCategory category) {
     _activeCategory = category;

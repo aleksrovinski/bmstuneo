@@ -4,6 +4,8 @@ import '../providers/auth_provider.dart';
 import '../providers/fv_provider.dart';
 import '../models/physical_culture.dart';
 import '../widgets/offline_status_banner.dart';
+import '../widgets/pe_calculator_sheet.dart';
+import '../providers/schedule_provider.dart';
 
 class FvScreen extends StatelessWidget {
   const FvScreen({super.key});
@@ -15,7 +17,9 @@ class FvScreen extends StatelessWidget {
 
     final auth = context.watch<AuthProvider>();
     final fv = context.watch<FvProvider>();
+    final sched = context.watch<ScheduleProvider>();
     final data = fv.data;
+    final currentWeekNum = sched.currentWeek?.weekNumber ?? 1;
 
     return Scaffold(
       appBar: AppBar(
@@ -24,6 +28,16 @@ class FvScreen extends StatelessWidget {
           style: TextStyle(fontWeight: FontWeight.w700),
         ),
         actions: [
+          if (data != null)
+            IconButton(
+              icon: const Icon(Icons.calculate_rounded),
+              tooltip: 'Калькулятор закрытия семестра',
+              onPressed: () => PeCalculatorSheet.show(
+                context,
+                data: data,
+                currentWeekNum: currentWeekNum,
+              ),
+            ),
           IconButton(
             icon: const Icon(Icons.refresh_rounded),
             tooltip: 'Обновить данные ФКиС',
@@ -126,6 +140,32 @@ class FvScreen extends StatelessWidget {
 
                 // Overall Credit Status Banner
                 _buildCreditStatusBanner(context, data),
+
+                // Calculator Action Button
+                if (data != null) ...[
+                  const SizedBox(height: 12),
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      onPressed: () => PeCalculatorSheet.show(
+                        context,
+                        data: data,
+                        currentWeekNum: currentWeekNum,
+                      ),
+                      icon: const Icon(Icons.calculate_rounded, size: 20),
+                      label: const Text(
+                        'Калькулятор темпа посещений и расчёт рисков',
+                        style: TextStyle(fontWeight: FontWeight.w700),
+                      ),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: colorScheme.primary,
+                        side: BorderSide(color: colorScheme.primary.withValues(alpha: 0.5)),
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                      ),
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 24),
 
                 // 2. Active Teacher Signups / Current Records

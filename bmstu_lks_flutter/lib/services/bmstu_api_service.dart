@@ -51,9 +51,54 @@ class BmstuApiService {
 
   final CookieJar cookieJar = CookieJar();
   bool _isAuthenticated = false;
+  Future<bool> Function()? onSilentRelogin;
+  bool _isRelogging = false;
 
   BmstuApiService() {
     _dio.interceptors.add(CookieManager(cookieJar));
+    _dio.interceptors.add(
+      QueuedInterceptorsWrapper(
+        onError: (DioException err, handler) async {
+          final statusCode = err.response?.statusCode;
+          final responseData = err.response?.data?.toString() ?? '';
+          final isAuthError = statusCode == 401 ||
+              statusCode == 403 ||
+              responseData.contains('login-actions') ||
+              responseData.contains('auth.bmstu.ru');
+
+          final path = err.requestOptions.path;
+          final isLoginPath = path.contains('/cookie/login') ||
+              path.contains('sso.bmstu.ru') ||
+              path.contains('/callback/kc');
+
+          if (isAuthError && !isLoginPath && onSilentRelogin != null && !_isRelogging) {
+            _isRelogging = true;
+            try {
+              final ok = await onSilentRelogin!();
+              _isRelogging = false;
+              if (ok) {
+                final req = err.requestOptions;
+                final response = await _dio.request(
+                  req.path,
+                  data: req.data,
+                  queryParameters: req.queryParameters,
+                  options: Options(
+                    method: req.method,
+                    headers: req.headers,
+                    contentType: req.contentType,
+                    responseType: req.responseType,
+                  ),
+                );
+                return handler.resolve(response);
+              }
+            } catch (_) {
+              _isRelogging = false;
+            }
+          }
+          return handler.next(err);
+        },
+      ),
+    );
   }
 
   bool get isAuthenticated => _isAuthenticated;
@@ -156,9 +201,22 @@ class BmstuApiService {
       final studentResp = await _dio.get('$apiBase/student');
       final studentData = studentResp.data is Map ? studentResp.data : null;
       final s = studentData?['data'] ?? studentData;
-      final stages = s?['stages'] as List? ?? [];
-      final stage = stages.isNotEmpty ? stages[0] as Map<String, dynamic> : null;
+      final rawStages = s?['stages'] as List? ?? [];
+      final stage = rawStages.isNotEmpty ? rawStages[0] as Map<String, dynamic> : null;
       final group = stage?['group'] as Map<String, dynamic>? ?? {};
+
+      // Parse all stages
+      final parsedStages = rawStages
+          .whereType<Map<String, dynamic>>()
+          .map((st) => StudentStage.fromJson(st))
+          .toList();
+
+      // Parse agreements
+      final rawAgreements = stage?['agreements'] as List? ?? [];
+      final parsedAgreements = rawAgreements
+          .whereType<Map<String, dynamic>>()
+          .map((a) => StudentAgreement.fromJson(a))
+          .toList();
 
       String? qrUrl;
       try {
@@ -167,6 +225,10 @@ class BmstuApiService {
         final q = qrData?['data'] ?? qrData;
         qrUrl = q?['qr'] as String?;
       } catch (_) {}
+
+      final semester = (group['semester'] as num?)?.toInt() ?? 1;
+      final dormitory = p['dormitory']?.toString() == 'dormitory.true' ||
+          s?['dormitory']?.toString() == 'dormitory.true';
 
       return UserProfile(
         lastName: p['lastName']?.toString() ?? '',
@@ -178,6 +240,16 @@ class BmstuApiService {
         stageUuid: stage?['uuid']?.toString() ?? '',
         personUuid: p['uuid']?.toString(),
         qrUrl: qrUrl,
+        cardNumber: stage?['cardNumber']?.toString(),
+        semester: semester,
+        specialityTitle: group['specialityTitle']?.toString(),
+        specializationTitle: group['specializationTitle']?.toString(),
+        studyType: stage?['studyType']?.toString(),
+        state: stage?['state']?.toString() ?? 'Обучается',
+        hasDormitory: dormitory,
+        birthDate: p['birthDate']?.toString(),
+        agreements: parsedAgreements,
+        stages: parsedStages,
       );
     } catch (e) {
       return null;

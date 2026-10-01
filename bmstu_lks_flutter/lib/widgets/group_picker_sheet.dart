@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import '../services/bmstu_groups_catalog.dart';
+import '../providers/favorites_provider.dart';
 
 class GroupPickerSheet extends StatefulWidget {
   final String? currentGroupTitle;
@@ -55,6 +57,10 @@ class _GroupPickerSheetState extends State<GroupPickerSheet> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    FavoritesProvider? fav;
+    try {
+      fav = context.watch<FavoritesProvider>();
+    } catch (_) {}
 
     return Container(
       height: MediaQuery.of(context).size.height * 0.8,
@@ -138,6 +144,51 @@ class _GroupPickerSheetState extends State<GroupPickerSheet> {
           ),
           const SizedBox(height: 8),
 
+          // Favorite groups section
+          if (fav != null && fav.favoriteGroups.isNotEmpty) ...[
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 2),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  'Избранные группы',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    color: theme.colorScheme.primary,
+                  ),
+                ),
+              ),
+            ),
+            SizedBox(
+              height: 38,
+              child: ListView.separated(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                scrollDirection: Axis.horizontal,
+                itemCount: fav.favoriteGroups.length,
+                separatorBuilder: (_, index) => const SizedBox(width: 8),
+                itemBuilder: (context, idx) {
+                  final fg = fav!.favoriteGroups[idx];
+                  final isSel = widget.currentGroupTitle == fg.title;
+                  return ActionChip(
+                    avatar: const Icon(Icons.star_rounded, size: 16, color: Colors.amber),
+                    label: Text(fg.title),
+                    backgroundColor: isSel
+                        ? theme.colorScheme.primaryContainer
+                        : theme.colorScheme.surfaceContainerHighest,
+                    labelStyle: TextStyle(
+                      fontSize: 12,
+                      fontWeight: isSel ? FontWeight.w700 : FontWeight.w500,
+                      color: isSel ? theme.colorScheme.onPrimaryContainer : theme.colorScheme.onSurface,
+                    ),
+                    onPressed: () => widget.onSelect(fg),
+                  );
+                },
+              ),
+            ),
+            const SizedBox(height: 6),
+          ],
+
           // Results list
           Expanded(
             child: _results.isEmpty
@@ -154,6 +205,7 @@ class _GroupPickerSheetState extends State<GroupPickerSheet> {
                     itemBuilder: (context, index) {
                       final group = _results[index];
                       final isSelected = widget.currentGroupTitle == group.title;
+                      final isFav = fav?.isGroupFavorite(group.uuid) ?? false;
 
                       return ListTile(
                         onTap: () => widget.onSelect(group),
@@ -187,9 +239,27 @@ class _GroupPickerSheetState extends State<GroupPickerSheet> {
                                 : theme.colorScheme.onSurface,
                           ),
                         ),
-                        trailing: isSelected
-                            ? Icon(Icons.check_circle, color: theme.colorScheme.primary, size: 20)
-                            : null,
+                        trailing: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            if (isSelected)
+                              Padding(
+                                padding: const EdgeInsets.only(right: 6),
+                                child: Icon(Icons.check_circle, color: theme.colorScheme.primary, size: 20),
+                              ),
+                            IconButton(
+                              icon: Icon(
+                                isFav ? Icons.star_rounded : Icons.star_outline_rounded,
+                                color: isFav
+                                    ? Colors.amber
+                                    : theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.4),
+                                size: 22,
+                              ),
+                              tooltip: isFav ? 'Удалить из избранного' : 'Добавить в избранное',
+                              onPressed: fav == null ? null : () => fav!.toggleGroupFavorite(group),
+                            ),
+                          ],
+                        ),
                       );
                     },
                   ),
