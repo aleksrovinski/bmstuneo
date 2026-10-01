@@ -1,11 +1,14 @@
+import 'dart:convert';
 import 'package:dio/dio.dart';
 import 'package:cookie_jar/cookie_jar.dart';
 import 'package:dio_cookie_manager/dio_cookie_manager.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../models/user_profile.dart';
 import '../models/current_week.dart';
 import '../models/schedule_lesson.dart';
 import '../models/discipline_progress.dart';
 import '../models/physical_culture.dart';
+import '../models/session_result.dart';
 import 'bmstu_groups_catalog.dart';
 
 class BmstuAuthException implements Exception {
@@ -230,6 +233,44 @@ class BmstuApiService {
       final dormitory = p['dormitory']?.toString() == 'dormitory.true' ||
           s?['dormitory']?.toString() == 'dormitory.true';
 
+      String? photoUrl;
+
+      // 1. Scrape student photo from https://lks.bmstu.ru/profile (_img_1rxc3_40 _visible_1rxc3_45)
+      try {
+        final profilePageResp = await _dio.get('https://lks.bmstu.ru/profile');
+        if (profilePageResp.statusCode == 200 && profilePageResp.data != null) {
+          final scrapedPhoto = parseProfilePhotoHtml(profilePageResp.data.toString());
+          if (scrapedPhoto != null && scrapedPhoto.isNotEmpty) {
+            photoUrl = scrapedPhoto;
+          }
+        }
+      } catch (_) {}
+
+      // 2. Fallback to person/student API fields
+      if (photoUrl == null || photoUrl.isEmpty) {
+        photoUrl = p['photoUrl']?.toString() ??
+            p['photo']?.toString() ??
+            p['avatarUrl']?.toString() ??
+            p['avatar']?.toString() ??
+            p['photo_url']?.toString() ??
+            s?['photoUrl']?.toString() ??
+            s?['photo']?.toString() ??
+            s?['avatar']?.toString();
+
+        if (photoUrl != null && photoUrl.isNotEmpty) {
+          if (!photoUrl.startsWith('data:') &&
+              !photoUrl.startsWith('http://') &&
+              !photoUrl.startsWith('https://')) {
+            if (!photoUrl.startsWith('/')) {
+              photoUrl = '/$photoUrl';
+            }
+            photoUrl = 'https://lks.bmstu.ru$photoUrl';
+          }
+        } else if (p['uuid'] != null && p['uuid'].toString().isNotEmpty) {
+          photoUrl = 'https://lks.bmstu.ru/media/avatar/${p['uuid']}';
+        }
+      }
+
       return UserProfile(
         lastName: p['lastName']?.toString() ?? '',
         firstName: p['firstName']?.toString() ?? '',
@@ -240,6 +281,7 @@ class BmstuApiService {
         stageUuid: stage?['uuid']?.toString() ?? '',
         personUuid: p['uuid']?.toString(),
         qrUrl: qrUrl,
+        photoUrl: photoUrl,
         cardNumber: stage?['cardNumber']?.toString(),
         semester: semester,
         specialityTitle: group['specialityTitle']?.toString(),
@@ -578,6 +620,192 @@ class BmstuApiService {
         throw BmstuAuthException('Для поиска преподавателей требуется авторизация в ЛКС');
       }
     } catch (_) {}
+    return [];
+  }
+
+  // Scrape student photo from HTML of https://lks.bmstu.ru/profile
+  static String? parseProfilePhotoHtml(String html) {
+    final imgRegex = RegExp(r'<img[^>]+>', caseSensitive: false);
+    for (final match in imgRegex.allMatches(html)) {
+      final tag = match.group(0) ?? '';
+      if (tag.contains('_img_1rxc3_40') || tag.contains('_visible_1rxc3_45')) {
+        final srcMatch = RegExp(r'src="([^"]+)"', caseSensitive: false).firstMatch(tag);
+        if (srcMatch != null) {
+          final src = srcMatch.group(1);
+          if (src != null && src.trim().isNotEmpty) {
+            final trimmed = src.trim();
+            if (trimmed.startsWith('data:image') ||
+                trimmed.startsWith('http://') ||
+                trimmed.startsWith('https://')) {
+              return trimmed;
+            }
+            if (trimmed.startsWith('/')) {
+              return 'https://lks.bmstu.ru$trimmed';
+            }
+            return 'https://lks.bmstu.ru/$trimmed';
+          }
+        }
+      }
+    }
+    return null;
+  }
+
+  // Parse Session Results from HTML of https://lks.bmstu.ru/session
+  static List<SemesterSession> parseSessionHtml(String html) {
+    final List<SemesterSession> sessions = [];
+
+    // Optional: Extract "Данные актуальны на ..."
+    String? lastUpdated;
+    final updatedMatch = RegExp(r'<i>\s*(Данные актуальны на [^<]+)\s*</i>', caseSensitive: false).firstMatch(html);
+    if (updatedMatch != null) {
+      lastUpdated = updatedMatch.group(1)?.trim();
+    }
+
+    // Match each article block
+    final articleRegex = RegExp(
+      r'<article[^>]*class="[^"]*table-container[^"]*"[^>]*>([\s\S]*?)(?=<\/article>|$)',
+      caseSensitive: false,
+    );
+
+    final articleMatches = articleRegex.allMatches(html);
+    for (final articleMatch in articleMatches) {
+      final articleContent = articleMatch.group(1) ?? '';
+
+      // Title: e.g. "Семестр 2"
+      final titleMatch = RegExp(r'<h1[^>]*>([\s\S]*?Семестр\s*(\d+)[\s\S]*?)<\/h1>', caseSensitive: false)
+          .firstMatch(articleContent);
+      final rawTitle = titleMatch != null ? titleMatch.group(1)!.replaceAll(RegExp(r'<[^>]+>'), '').trim() : 'Семестр';
+      final semNum = titleMatch != null ? int.tryParse(titleMatch.group(2) ?? '1') ?? 1 : 1;
+
+      // Extract rows from tbody
+      final tbodyMatch = RegExp(r'<tbody[^>]*>([\s\S]*?)<\/tbody>', caseSensitive: false).firstMatch(articleContent);
+      final tbodyContent = tbodyMatch != null ? tbodyMatch.group(1)! : articleContent;
+
+      final rowRegex = RegExp(r'<tr[^>]*role="row"[^>]*>([\s\S]*?)<\/tr>', caseSensitive: false);
+      final rowMatches = rowRegex.allMatches(tbodyContent);
+
+      final List<SessionDiscipline> disciplines = [];
+
+      for (final rowMatch in rowMatches) {
+        final rowContent = rowMatch.group(1) ?? '';
+        final tdRegex = RegExp(r'<td[^>]*>([\s\S]*?)<\/td>', caseSensitive: false);
+        final tdMatches = tdRegex.allMatches(rowContent).toList();
+        if (tdMatches.length < 3) continue;
+
+        final col1 = tdMatches[0].group(1) ?? '';
+        final col2 = tdMatches[1].group(1) ?? '';
+        final col3 = tdMatches[2].group(1) ?? '';
+
+        String title = '';
+        String department = '';
+        String controlType = '';
+
+        final deptMatch = RegExp(r'\(([^,]+),\s*([^)]+)\)').firstMatch(col1);
+        if (deptMatch != null) {
+          department = deptMatch.group(1)!.trim();
+          controlType = deptMatch.group(2)!.trim();
+          final rawWithoutSpan = col1.replaceAll(RegExp(r'<span[^>]*>[\s\S]*?<\/span>'), '');
+          title = rawWithoutSpan.replaceAll(RegExp(r'<[^>]+>'), '').replaceAll('&nbsp;', ' ').trim();
+        } else {
+          title = col1.replaceAll(RegExp(r'<[^>]+>'), '').replaceAll('&nbsp;', ' ').trim();
+        }
+
+        final hoursStr = col2.replaceAll(RegExp(r'<[^>]+>'), '').trim();
+        final hours = int.tryParse(hoursStr) ?? 0;
+
+        String grade = '';
+        final titleAttrMatch = RegExp(r'title="([^"]+)"').firstMatch(col3);
+        if (titleAttrMatch != null && titleAttrMatch.group(1)!.trim().isNotEmpty) {
+          grade = titleAttrMatch.group(1)!.trim();
+        } else {
+          grade = col3.replaceAll(RegExp(r'<[^>]+>'), '').replaceAll('&nbsp;', ' ').trim();
+        }
+
+        if (title.isNotEmpty) {
+          disciplines.add(SessionDiscipline(
+            title: title,
+            department: department,
+            controlType: controlType,
+            hours: hours,
+            grade: grade,
+          ));
+        }
+      }
+
+      if (disciplines.isNotEmpty) {
+        sessions.add(SemesterSession(
+          semesterTitle: rawTitle,
+          semesterNumber: semNum,
+          disciplines: disciplines,
+          lastUpdated: lastUpdated,
+        ));
+      }
+    }
+
+    sessions.sort((a, b) => b.semesterNumber.compareTo(a.semesterNumber));
+    return sessions;
+  }
+
+  // Get Session Results (from https://lks.bmstu.ru/session or cache)
+  Future<List<SemesterSession>> getSessionResults({bool forceRefresh = false}) async {
+    const cacheKey = 'bmstu_session_results_cache';
+    final prefs = await SharedPreferences.getInstance();
+
+    // 1. If not forcing refresh, try cache first if available
+    if (!forceRefresh) {
+      final cachedJson = prefs.getString(cacheKey);
+      if (cachedJson != null && cachedJson.isNotEmpty) {
+        try {
+          final decoded = jsonDecode(cachedJson) as List;
+          final cachedList = decoded
+              .whereType<Map<String, dynamic>>()
+              .map((s) => SemesterSession.fromJson(s))
+              .toList();
+          if (cachedList.isNotEmpty) {
+            // Trigger background refresh if authenticated
+            if (_isAuthenticated) {
+              _fetchAndCacheSessionResults(prefs, cacheKey).catchError((_) => <SemesterSession>[]);
+            }
+            return cachedList;
+          }
+        } catch (_) {}
+      }
+    }
+
+    // 2. Fetch live data
+    try {
+      final liveSessions = await _fetchAndCacheSessionResults(prefs, cacheKey);
+      if (liveSessions.isNotEmpty) return liveSessions;
+    } catch (e) {
+      // 3. On error, fallback to cache
+      final cachedJson = prefs.getString(cacheKey);
+      if (cachedJson != null && cachedJson.isNotEmpty) {
+        try {
+          final decoded = jsonDecode(cachedJson) as List;
+          return decoded
+              .whereType<Map<String, dynamic>>()
+              .map((s) => SemesterSession.fromJson(s))
+              .toList();
+        } catch (_) {}
+      }
+      rethrow;
+    }
+
+    return [];
+  }
+
+  Future<List<SemesterSession>> _fetchAndCacheSessionResults(
+      SharedPreferences prefs, String cacheKey) async {
+    final resp = await _dio.get('https://lks.bmstu.ru/session');
+    if (resp.statusCode == 200 && resp.data != null) {
+      final html = resp.data.toString();
+      final sessions = parseSessionHtml(html);
+      if (sessions.isNotEmpty) {
+        final jsonList = sessions.map((s) => s.toJson()).toList();
+        await prefs.setString(cacheKey, jsonEncode(jsonList));
+        return sessions;
+      }
+    }
     return [];
   }
 }

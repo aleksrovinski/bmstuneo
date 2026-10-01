@@ -1,4 +1,6 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import '../models/user_profile.dart';
 import 'qr_pass_dialog.dart';
 
@@ -113,7 +115,7 @@ class _StudentIdCardState extends State<StudentIdCard> {
                 Row(
                   crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
-                    // Avatar / Initials
+                    // Avatar / Initials / Student Photo
                     Container(
                       width: 62,
                       height: 62,
@@ -122,15 +124,8 @@ class _StudentIdCardState extends State<StudentIdCard> {
                         color: Colors.white.withValues(alpha: 0.25),
                         border: Border.all(color: Colors.white, width: 2),
                       ),
-                      child: Center(
-                        child: Text(
-                          widget.isGuest ? 'Г' : user.initials,
-                          style: const TextStyle(
-                            fontSize: 24,
-                            fontWeight: FontWeight.w900,
-                            color: Colors.white,
-                          ),
-                        ),
+                      child: ClipOval(
+                        child: _buildStudentPhoto(user),
                       ),
                     ),
                     const SizedBox(width: 16),
@@ -349,4 +344,81 @@ class _StudentIdCardState extends State<StudentIdCard> {
       ],
     );
   }
+
+  Widget _buildStudentPhoto(UserProfile user) {
+    if (widget.isGuest || user.photoUrl == null || user.photoUrl!.isEmpty) {
+      return Center(
+        child: Text(
+          widget.isGuest ? 'Г' : user.initials,
+          style: const TextStyle(
+            fontSize: 24,
+            fontWeight: FontWeight.w900,
+            color: Colors.white,
+          ),
+        ),
+      );
+    }
+
+    final photo = user.photoUrl!;
+    if (photo.startsWith('data:image')) {
+      try {
+        final commaIndex = photo.indexOf(',');
+        final base64Str = commaIndex != -1 ? photo.substring(commaIndex + 1) : photo;
+        final bytes = base64Decode(base64Str);
+        return Image.memory(
+          bytes,
+          fit: BoxFit.cover,
+          errorBuilder: (context, error, stackTrace) => Center(
+            child: Text(
+              user.initials,
+              style: const TextStyle(
+                fontSize: 22,
+                fontWeight: FontWeight.w900,
+                color: Colors.white,
+              ),
+            ),
+          ),
+        );
+      } catch (_) {
+        // Fallback to initials
+      }
+    } else {
+      return CachedNetworkImage(
+        imageUrl: photo,
+        fit: BoxFit.cover,
+        placeholder: (context, url) => Center(
+          child: Text(
+            user.initials,
+            style: const TextStyle(
+              fontSize: 22,
+              fontWeight: FontWeight.w900,
+              color: Colors.white,
+            ),
+          ),
+        ),
+        errorWidget: (context, url, error) => Center(
+          child: Text(
+            user.initials,
+            style: const TextStyle(
+              fontSize: 22,
+              fontWeight: FontWeight.w900,
+              color: Colors.white,
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Center(
+      child: Text(
+        user.initials,
+        style: const TextStyle(
+          fontSize: 24,
+          fontWeight: FontWeight.w900,
+          color: Colors.white,
+        ),
+      ),
+    );
+  }
 }
+

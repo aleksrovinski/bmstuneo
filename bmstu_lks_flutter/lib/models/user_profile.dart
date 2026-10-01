@@ -114,6 +114,7 @@ class UserProfile {
   final String state;
   final bool hasDormitory;
   final String? birthDate;
+  final String? photoUrl;
   final List<StudentAgreement> agreements;
   final List<StudentStage> stages;
 
@@ -135,6 +136,7 @@ class UserProfile {
     this.state = 'Обучается',
     this.hasDormitory = false,
     this.birthDate,
+    this.photoUrl,
     this.agreements = const [],
     this.stages = const [],
   });
@@ -176,6 +178,7 @@ class UserProfile {
         'state': state,
         'hasDormitory': hasDormitory,
         'birthDate': birthDate,
+        'photoUrl': photoUrl,
         'agreements': agreements.map((a) => a.toJson()).toList(),
         'stages': stages.map((s) => s.toJson()).toList(),
       };
@@ -202,6 +205,10 @@ class UserProfile {
       state: json['state'] as String? ?? 'Обучается',
       hasDormitory: json['hasDormitory'] as bool? ?? false,
       birthDate: json['birthDate'] as String?,
+      photoUrl: json['photoUrl'] as String? ??
+          json['photo'] as String? ??
+          json['avatarUrl'] as String? ??
+          json['avatar'] as String?,
       agreements: rawAgreements
           .whereType<Map<String, dynamic>>()
           .map((a) => StudentAgreement.fromJson(a))

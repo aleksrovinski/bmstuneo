@@ -12,7 +12,7 @@ import '../constants/app_version.dart';
 import '../widgets/bmstu_neo_logo.dart';
 import '../widgets/student_id_card.dart';
 import '../models/user_profile.dart';
-import 'gradebook_screen.dart';
+import 'session_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -96,8 +96,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
             ),
             const SizedBox(height: 20),
 
-            // 2. Electronic Gradebook Quick Card
-            _buildGradebookCard(context, auth, prog),
+            // 2. Exam Session Card
+            _buildSessionCard(context, auth, prog),
             const SizedBox(height: 20),
 
             // 3. Theme & Styling Section
@@ -392,10 +392,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  Widget _buildGradebookCard(BuildContext context, AuthProvider auth, ProgressProvider prog) {
+  Widget _buildSessionCard(BuildContext context, AuthProvider auth, ProgressProvider prog) {
     final theme = Theme.of(context);
-    final gpa = prog.gpa;
-    final status = prog.scholarshipStatus;
+    final disciplines = prog.disciplines;
+    final debtsCount = disciplines.where((d) => d.estimatedGrade == 2).length;
+    final passedCount = disciplines.where((d) => d.isPassed).length;
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -417,7 +418,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   color: theme.colorScheme.primaryContainer,
                   borderRadius: BorderRadius.circular(12),
                 ),
-                child: Icon(Icons.menu_book_rounded, color: theme.colorScheme.onPrimaryContainer, size: 22),
+                child: Icon(Icons.school_rounded, color: theme.colorScheme.onPrimaryContainer, size: 22),
               ),
               const SizedBox(width: 14),
               Expanded(
@@ -425,7 +426,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Электронная зачётная книжка',
+                      'Экзаменационная сессия',
                       style: TextStyle(
                         fontSize: 15,
                         fontWeight: FontWeight.w800,
@@ -436,10 +437,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     Text(
                       auth.isGuest
                           ? 'Доступно после авторизации в ЛКС'
-                          : 'Средний балл: ${gpa > 0 ? gpa.toStringAsFixed(2) : "—"} • ${status.title}',
+                          : (disciplines.isEmpty
+                              ? 'Расписание экзаменов и ведомости'
+                              : (debtsCount > 0
+                                  ? 'Задолженностей: $debtsCount • Сдано: $passedCount/${disciplines.length}'
+                                  : 'Допущен к сессии • Сдано: $passedCount/${disciplines.length}')),
                       style: TextStyle(
                         fontSize: 12,
-                        color: theme.colorScheme.onSurfaceVariant,
+                        color: debtsCount > 0 ? Colors.red : theme.colorScheme.onSurfaceVariant,
+                        fontWeight: debtsCount > 0 ? FontWeight.w600 : FontWeight.normal,
                       ),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
@@ -457,11 +463,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   ? null
                   : () {
                       Navigator.of(context).push(
-                        MaterialPageRoute(builder: (_) => const GradebookScreen()),
+                        MaterialPageRoute(builder: (_) => const SessionScreen()),
                       );
                     },
-              icon: const Icon(Icons.visibility_rounded, size: 18),
-              label: const Text('Открыть зачётку и семестры', style: TextStyle(fontWeight: FontWeight.w700)),
+              icon: const Icon(Icons.arrow_forward_rounded, size: 18),
+              label: const Text('Перейти к разделу «Сессия»', style: TextStyle(fontWeight: FontWeight.w700)),
               style: OutlinedButton.styleFrom(
                 foregroundColor: theme.colorScheme.primary,
                 side: BorderSide(color: theme.colorScheme.primary.withValues(alpha: 0.5)),
@@ -543,24 +549,38 @@ class _ProfileScreenState extends State<ProfileScreen> {
               const SizedBox(height: 14),
 
               // Accent Color Palette
-              Text(
-                'Цветовой акцент интерфейса',
-                style: TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w700,
-                  color: theme.colorScheme.onSurface,
-                ),
+              Row(
+                children: [
+                  Text(
+                    'Цветовой акцент:',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                      color: theme.colorScheme.onSurface,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    themeProv.accentColor.title,
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                      color: theme.colorScheme.primary,
+                    ),
+                  ),
+                ],
               ),
               const SizedBox(height: 10),
               SizedBox(
-                height: 48,
+                height: 52,
                 child: ListView.separated(
                   scrollDirection: Axis.horizontal,
                   itemCount: AppAccentColor.values.length,
-                  separatorBuilder: (_, index) => const SizedBox(width: 10),
+                  separatorBuilder: (_, index) => const SizedBox(width: 12),
                   itemBuilder: (context, idx) {
                     final item = AppAccentColor.values[idx];
                     final isSelected = themeProv.accentColor == item;
+                    final isDynamic = item == AppAccentColor.dynamicColor;
 
                     return GestureDetector(
                       onTap: () => themeProv.setAccentColor(item),
@@ -568,29 +588,42 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         message: item.title,
                         child: AnimatedContainer(
                           duration: const Duration(milliseconds: 200),
-                          width: 44,
-                          height: 44,
+                          width: 48,
+                          height: 48,
                           decoration: BoxDecoration(
                             shape: BoxShape.circle,
-                            color: item.color,
+                            gradient: isDynamic
+                                ? const SweepGradient(
+                                    colors: [
+                                      Color(0xFF388E3C),
+                                      Color(0xFF1976D2),
+                                      Color(0xFF7B1FA2),
+                                      Color(0xFFE64A19),
+                                      Color(0xFF388E3C),
+                                    ],
+                                  )
+                                : null,
+                            color: isDynamic ? null : item.color,
                             border: Border.all(
-                              color: isSelected ? Colors.white : Colors.transparent,
-                              width: 3,
+                              color: isSelected ? theme.colorScheme.primary : Colors.transparent,
+                              width: 3.5,
                             ),
                             boxShadow: [
                               if (isSelected)
                                 BoxShadow(
-                                  color: item.color.withValues(alpha: 0.5),
+                                  color: item.color.withValues(alpha: 0.45),
                                   blurRadius: 8,
                                   offset: const Offset(0, 2),
                                 ),
                             ],
                           ),
-                          child: isSelected
-                              ? const Center(
-                                  child: Icon(Icons.check_rounded, color: Colors.white, size: 22),
-                                )
-                              : null,
+                          child: Center(
+                            child: isSelected
+                                ? const Icon(Icons.check_rounded, color: Colors.white, size: 24)
+                                : (isDynamic
+                                    ? const Icon(Icons.auto_awesome_rounded, color: Colors.white, size: 20)
+                                    : null),
+                          ),
                         ),
                       ),
                     );

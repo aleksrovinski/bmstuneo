@@ -4,7 +4,6 @@ import '../providers/auth_provider.dart';
 import '../providers/fv_provider.dart';
 import '../models/physical_culture.dart';
 import '../widgets/offline_status_banner.dart';
-import '../widgets/pe_calculator_sheet.dart';
 import '../providers/schedule_provider.dart';
 
 class FvScreen extends StatelessWidget {
@@ -28,16 +27,6 @@ class FvScreen extends StatelessWidget {
           style: TextStyle(fontWeight: FontWeight.w700),
         ),
         actions: [
-          if (data != null)
-            IconButton(
-              icon: const Icon(Icons.calculate_rounded),
-              tooltip: 'Калькулятор закрытия семестра',
-              onPressed: () => PeCalculatorSheet.show(
-                context,
-                data: data,
-                currentWeekNum: currentWeekNum,
-              ),
-            ),
           IconButton(
             icon: const Icon(Icons.refresh_rounded),
             tooltip: 'Обновить данные ФКиС',
@@ -138,34 +127,8 @@ class FvScreen extends StatelessWidget {
                 ),
                 const SizedBox(height: 16),
 
-                // Overall Credit Status Banner
-                _buildCreditStatusBanner(context, data),
-
-                // Calculator Action Button
-                if (data != null) ...[
-                  const SizedBox(height: 12),
-                  SizedBox(
-                    width: double.infinity,
-                    child: OutlinedButton.icon(
-                      onPressed: () => PeCalculatorSheet.show(
-                        context,
-                        data: data,
-                        currentWeekNum: currentWeekNum,
-                      ),
-                      icon: const Icon(Icons.calculate_rounded, size: 20),
-                      label: const Text(
-                        'Калькулятор темпа посещений и расчёт рисков',
-                        style: TextStyle(fontWeight: FontWeight.w700),
-                      ),
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: colorScheme.primary,
-                        side: BorderSide(color: colorScheme.primary.withValues(alpha: 0.5)),
-                        padding: const EdgeInsets.symmetric(vertical: 12),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                      ),
-                    ),
-                  ),
-                ],
+                // Overall Credit Status Banner with 2-visits/week completion forecast
+                _buildCreditStatusBanner(context, data, currentWeekNum),
                 const SizedBox(height: 24),
 
                 // 2. Active Teacher Signups / Current Records
@@ -344,7 +307,7 @@ class FvScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildCreditStatusBanner(BuildContext context, PhysicalCultureData? data) {
+  Widget _buildCreditStatusBanner(BuildContext context, PhysicalCultureData? data, int currentWeekNum) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     final isCompleted = data?.isCreditReady ?? false;
@@ -355,56 +318,112 @@ class FvScreen extends StatelessWidget {
         ? (PhysicalCultureData.targetAttends - (data?.studyAttends ?? 0))
         : 0;
 
+    // В МГТУ им. Баумана на физкультуру разрешено ходить максимум 2 раза в неделю
+    final weeksNeeded = (attendsLeft / 2).ceil();
+    final remainingWeeks = (17 - currentWeekNum).clamp(0, 17);
+    final isRisk = !isCompleted && (weeksNeeded > remainingWeeks);
+
     final bannerBg = isCompleted
         ? colorScheme.primaryContainer.withValues(alpha: 0.6)
-        : colorScheme.secondaryContainer.withValues(alpha: 0.6);
+        : (isRisk
+            ? Colors.red.withValues(alpha: 0.12)
+            : colorScheme.secondaryContainer.withValues(alpha: 0.6));
     final bannerBorder = isCompleted
         ? colorScheme.primary.withValues(alpha: 0.35)
-        : colorScheme.secondary.withValues(alpha: 0.35);
-    final iconColor = isCompleted ? colorScheme.primary : colorScheme.secondary;
-    final textColor = isCompleted ? colorScheme.onPrimaryContainer : colorScheme.onSecondaryContainer;
+        : (isRisk ? Colors.red.withValues(alpha: 0.4) : colorScheme.secondary.withValues(alpha: 0.35));
+    final iconColor = isCompleted
+        ? colorScheme.primary
+        : (isRisk ? Colors.red : colorScheme.secondary);
+    final textColor = isCompleted
+        ? colorScheme.onPrimaryContainer
+        : (isRisk ? theme.colorScheme.onSurface : colorScheme.onSecondaryContainer);
+
+    String weeksWord(int n) {
+      if (n % 10 == 1 && n % 100 != 11) return 'неделю';
+      if (n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 10 || n % 100 >= 20)) return 'недели';
+      return 'недель';
+    }
 
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
       decoration: BoxDecoration(
         color: bannerBg,
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(18),
         border: Border.all(color: bannerBorder),
       ),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(
-            isCompleted ? Icons.check_circle_rounded : Icons.pending_actions_rounded,
-            color: iconColor,
-            size: 26,
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  isCompleted ? 'Норматив семестра выполнен!' : 'До зачёта по ФКиС осталось:',
+          Row(
+            children: [
+              Icon(
+                isCompleted
+                    ? Icons.check_circle_rounded
+                    : (isRisk ? Icons.warning_amber_rounded : Icons.timer_outlined),
+                color: iconColor,
+                size: 26,
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  isCompleted
+                      ? 'Зачёт по физкультуре закрыт!'
+                      : (weeksNeeded <= 0
+                          ? 'Все посещения закрыты!'
+                          : 'Зачёт закроется через $weeksNeeded ${weeksWord(weeksNeeded)}'),
                   style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w700,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w800,
                     color: textColor,
                   ),
                 ),
-                if (!isCompleted) ...[
-                  const SizedBox(height: 2),
-                  Text(
-                    '${pointsLeft > 0 ? "$pointsLeft б." : ""} ${pointsLeft > 0 && attendsLeft > 0 ? "и " : ""}${attendsLeft > 0 ? "$attendsLeft пос." : ""}',
-                    style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                      color: textColor.withValues(alpha: 0.85),
+              ),
+            ],
+          ),
+          if (!isCompleted) ...[
+            const SizedBox(height: 8),
+            Text(
+              'Расчёт при лимите 2 посещения в неделю. До норматива осталось: '
+              '${attendsLeft > 0 ? "$attendsLeft пос." : ""}${attendsLeft > 0 && pointsLeft > 0 ? " и " : ""}${pointsLeft > 0 ? "$pointsLeft б." : ""}.',
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w500,
+                color: textColor.withValues(alpha: 0.85),
+                height: 1.3,
+              ),
+            ),
+            if (isRisk) ...[
+              const SizedBox(height: 6),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Icon(Icons.error_outline_rounded, color: Colors.red, size: 16),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      'Внимание: до конца семестра осталось $remainingWeeks ${weeksWord(remainingWeeks)}. '
+                      'Чтобы успеть до зачётной недели, сдайте контрольные нормативы или запишитесь на отработки.',
+                      style: const TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.red,
+                        height: 1.25,
+                      ),
                     ),
                   ),
                 ],
-              ],
+              ),
+            ],
+          ] else ...[
+            const SizedBox(height: 4),
+            Text(
+              'Все требования выполнены: 60/60 баллов и не менее 25 посещений.',
+              style: TextStyle(
+                fontSize: 12,
+                color: textColor.withValues(alpha: 0.8),
+              ),
             ),
-          ),
+          ],
         ],
       ),
     );

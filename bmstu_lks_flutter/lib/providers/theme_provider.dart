@@ -117,14 +117,12 @@ class ThemeProvider with ChangeNotifier {
 
   /// Build Light ThemeData
   ThemeData buildLightTheme(ColorScheme? dynamicLight) {
-    final seedColor = (_accentColor == AppAccentColor.dynamicColor && dynamicLight != null)
-        ? dynamicLight.primary
-        : _accentColor.color;
-
-    final colorScheme = ColorScheme.fromSeed(
-      seedColor: seedColor,
-      brightness: Brightness.light,
-    );
+    final colorScheme = (_accentColor == AppAccentColor.dynamicColor && dynamicLight != null)
+        ? dynamicLight
+        : ColorScheme.fromSeed(
+            seedColor: _accentColor.color,
+            brightness: Brightness.light,
+          );
 
     final textTheme = GoogleFonts.interTextTheme(ThemeData.light().textTheme);
 
@@ -161,14 +159,12 @@ class ThemeProvider with ChangeNotifier {
   ThemeData buildDarkTheme(ColorScheme? dynamicDark) {
     final isOledActive = _themeMode == AppThemeMode.oled;
 
-    final seedColor = (_accentColor == AppAccentColor.dynamicColor && dynamicDark != null)
-        ? dynamicDark.primary
-        : _accentColor.color;
-
-    var colorScheme = ColorScheme.fromSeed(
-      seedColor: seedColor,
-      brightness: Brightness.dark,
-    );
+    var colorScheme = (_accentColor == AppAccentColor.dynamicColor && dynamicDark != null)
+        ? dynamicDark
+        : ColorScheme.fromSeed(
+            seedColor: _accentColor.color,
+            brightness: Brightness.dark,
+          );
 
     if (isOledActive) {
       colorScheme = colorScheme.copyWith(

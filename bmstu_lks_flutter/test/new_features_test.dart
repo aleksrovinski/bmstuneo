@@ -15,8 +15,7 @@ import 'package:bmstu_neo/providers/theme_provider.dart';
 import 'package:bmstu_neo/providers/progress_provider.dart';
 import 'package:bmstu_neo/providers/auth_provider.dart';
 import 'package:bmstu_neo/widgets/student_id_card.dart';
-import 'package:bmstu_neo/widgets/pe_calculator_sheet.dart';
-import 'package:bmstu_neo/screens/gradebook_screen.dart';
+import 'package:bmstu_neo/screens/session_screen.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -136,6 +135,7 @@ void main() {
         'studyType': 'studytype.paid',
         'state': 'Обучается',
         'hasDormitory': false,
+        'photoUrl': 'https://lks.bmstu.ru/media/avatar/photo123.jpg',
         'agreements': [
           {
             'date': '2025-08-08',
@@ -165,6 +165,7 @@ void main() {
       expect(profile.course, 2); // 3rd semester is 2nd year
       expect(profile.isPaid, isTrue);
       expect(profile.studyTypeTitle, 'Платная основа');
+      expect(profile.photoUrl, 'https://lks.bmstu.ru/media/avatar/photo123.jpg');
       expect(profile.agreements.length, 1);
       expect(profile.agreements.first.number, 'ПО-30263/2025');
       expect(profile.stages.length, 1);
@@ -252,8 +253,8 @@ void main() {
     });
   });
 
-  group('PE Semester Calculator Widget Tests', () {
-    testWidgets('PeCalculatorSheet calculates pace and responds to segment clicks', (tester) async {
+  group('PE 2-Visits/Week Completion Forecast Tests', () {
+    test('Calculates weeks needed based on 2-visits/week BMSTU limit', () {
       final data = PhysicalCultureData(
         studyPoints: 30, // 30 of 60 needed (30 remaining)
         studyAttends: 15, // 15 of 25 needed (10 remaining)
@@ -261,31 +262,98 @@ void main() {
         studyResults: [],
       );
 
-      await tester.pumpWidget(
-        MaterialApp(
-          home: Scaffold(
-            body: PeCalculatorSheet(
-              data: data,
-              currentWeekNum: 7, // Week 7 -> 10 weeks remaining
-            ),
-          ),
-        ),
-      );
+      final attendsLeft = PhysicalCultureData.targetAttends - data.studyAttends;
+      expect(attendsLeft, 10);
 
-      expect(find.text('Калькулятор закрытия семестра'), findsOneWidget);
-      expect(find.text('30 б.'), findsOneWidget); // Remaining points
-      expect(find.text('10 пос.'), findsOneWidget); // Remaining attends
+      // Max 2 visits per week in BMSTU
+      final weeksNeeded = (attendsLeft / 2).ceil();
+      expect(weeksNeeded, 5);
 
-      // Tap 3 times/week
-      await tester.tap(find.text('3 раза/нед'));
-      await tester.pumpAndSettle();
-
-      expect(find.textContaining('При темпе 3 раз(а) в неделю'), findsOneWidget);
+      // 1 attend left -> 1 week
+      expect(((1) / 2).ceil(), 1);
+      // 0 attends left -> 0 weeks
+      expect(((0) / 2).ceil(), 0);
     });
   });
 
-  group('GradebookScreen Widget Tests', () {
-    testWidgets('GradebookScreen displays GPA and student card header', (tester) async {
+  group('LKS Scraping & Session Parsing Tests', () {
+    test('parseProfilePhotoHtml extracts photo from _img_1rxc3_40 _visible_1rxc3_45', () {
+      const html1 = '<div class="profile"><img class="_img_1rxc3_40 _visible_1rxc3_45" src="/media/avatar/student1.jpg" alt="Student" /></div>';
+      final photo1 = BmstuApiService.parseProfilePhotoHtml(html1);
+      expect(photo1, 'https://lks.bmstu.ru/media/avatar/student1.jpg');
+
+      const htmlDataUri = '<img src="data:image/jpeg;base64,abc123xyz" class="other _img_1rxc3_40 _visible_1rxc3_45" />';
+      final photo2 = BmstuApiService.parseProfilePhotoHtml(htmlDataUri);
+      expect(photo2, 'data:image/jpeg;base64,abc123xyz');
+
+      const htmlNone = '<div><img src="/logo.png" class="header-logo" /></div>';
+      final photo3 = BmstuApiService.parseProfilePhotoHtml(htmlNone);
+      expect(photo3, isNull);
+    });
+
+    test('parseSessionHtml correctly parses semester tables, disciplines, hours, and grades', () {
+      const sampleHtml = '''
+<section class="_section_1abj1_40">
+  <div class="_date_1abj1_46"><i>Данные актуальны на 5 сентября 15:45</i></div>
+  <article class="table-container">
+    <h1>Семестр 2</h1>
+    <table>
+      <tbody class="p-datatable-tbody">
+        <tr role="row">
+          <td><div>Иностранный язык<span class="text-color-secondary"> (Л3, Зач)</span></div></td>
+          <td class="_hours-column_qowe5_83">72</td>
+          <td class="_mark-column_qowe5_72"><div title="Зачтено"> Зачтено</div></td>
+        </tr>
+        <tr role="row">
+          <td><div>Теоретическая механика<span class="text-color-secondary"> (ФН3, Экз)</span></div></td>
+          <td class="_hours-column_qowe5_83">144</td>
+          <td class="_mark-column_qowe5_72"><div title="Не аттестован"> Не аттестован</div></td>
+        </tr>
+        <tr role="row">
+          <td><div>Учебно-технологический практикум<span class="text-color-secondary"> (МТ13, Прк)</span></div></td>
+          <td class="_hours-column_qowe5_83">72</td>
+          <td class="_mark-column_qowe5_72"><div title="Отлично"> Отлично</div></td>
+        </tr>
+      </tbody>
+    </table>
+  </article>
+</section>
+''';
+
+      final sessions = BmstuApiService.parseSessionHtml(sampleHtml);
+      expect(sessions.length, 1);
+      final s2 = sessions.first;
+      expect(s2.semesterTitle, 'Семестр 2');
+      expect(s2.semesterNumber, 2);
+      expect(s2.lastUpdated, 'Данные актуальны на 5 сентября 15:45');
+      expect(s2.disciplines.length, 3);
+
+      final d1 = s2.disciplines[0];
+      expect(d1.title, 'Иностранный язык');
+      expect(d1.department, 'Л3');
+      expect(d1.controlType, 'Зач');
+      expect(d1.hours, 72);
+      expect(d1.grade, 'Зачтено');
+      expect(d1.isPassed, isTrue);
+      expect(d1.isDebt, isFalse);
+
+      final d2 = s2.disciplines[1];
+      expect(d2.title, 'Теоретическая механика');
+      expect(d2.department, 'ФН3');
+      expect(d2.controlType, 'Экз');
+      expect(d2.hours, 144);
+      expect(d2.grade, 'Не аттестован');
+      expect(d2.isPassed, isFalse);
+      expect(d2.isDebt, isTrue);
+
+      final d3 = s2.disciplines[2];
+      expect(d3.title, 'Учебно-технологический практикум');
+      expect(d3.isExcellent, isTrue);
+    });
+  });
+
+  group('SessionScreen Widget Tests', () {
+    testWidgets('SessionScreen displays session header and handles state', (tester) async {
       final authStorage = AuthStorage();
       final apiService = BmstuApiService();
 
@@ -305,14 +373,15 @@ void main() {
             ChangeNotifierProvider.value(value: progressProvider),
           ],
           child: const MaterialApp(
-            home: GradebookScreen(),
+            home: SessionScreen(),
           ),
         ),
       );
 
-      expect(find.text('Электронная зачётка'), findsOneWidget);
-      expect(find.text('GPA'), findsOneWidget);
-      expect(find.text('Успеваемость семестра'), findsOneWidget);
+      expect(find.text('Результаты сессий'), findsOneWidget);
+      await tester.pumpAndSettle();
+      expect(find.text('Результаты сессий'), findsOneWidget);
     });
   });
 }
+
