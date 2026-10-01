@@ -53,7 +53,10 @@ class BmstuApiService {
   );
 
   final CookieJar cookieJar = CookieJar();
+  Dio get dio => _dio;
   bool _isAuthenticated = false;
+  String? _lastStageUuid;
+  String? get lastStageUuid => _lastStageUuid;
   Future<bool> Function()? onSilentRelogin;
   bool _isRelogging = false;
 
@@ -235,18 +238,39 @@ class BmstuApiService {
 
       String? photoUrl;
 
-      // 1. Scrape student photo from https://lks.bmstu.ru/profile (_img_1rxc3_40 _visible_1rxc3_45)
+      // 1. Primary official endpoint: GET $apiBase/student/photo
       try {
-        final profilePageResp = await _dio.get('https://lks.bmstu.ru/profile');
-        if (profilePageResp.statusCode == 200 && profilePageResp.data != null) {
-          final scrapedPhoto = parseProfilePhotoHtml(profilePageResp.data.toString());
-          if (scrapedPhoto != null && scrapedPhoto.isNotEmpty) {
-            photoUrl = scrapedPhoto;
+        final photoResp = await _dio.get('$apiBase/student/photo');
+        if (photoResp.statusCode == 200 && photoResp.data is Map) {
+          final rawPhoto = (photoResp.data as Map)['photo']?.toString();
+          if (rawPhoto != null && rawPhoto.isNotEmpty) {
+            if (rawPhoto.startsWith('data:image')) {
+              photoUrl = rawPhoto;
+            } else if (rawPhoto.startsWith('/9j/') || rawPhoto.startsWith('iVBOR')) {
+              photoUrl = 'data:image/jpeg;base64,$rawPhoto';
+            } else if (rawPhoto.startsWith('http://') || rawPhoto.startsWith('https://')) {
+              photoUrl = rawPhoto;
+            } else {
+              photoUrl = 'data:image/jpeg;base64,$rawPhoto';
+            }
           }
         }
       } catch (_) {}
 
-      // 2. Fallback to person/student API fields
+      // 2. Scrape student photo from https://lks.bmstu.ru/profile (_img_1rxc3_40 _visible_1rxc3_45)
+      if (photoUrl == null || photoUrl.isEmpty) {
+        try {
+          final profilePageResp = await _dio.get('https://lks.bmstu.ru/profile');
+          if (profilePageResp.statusCode == 200 && profilePageResp.data != null) {
+            final scrapedPhoto = parseProfilePhotoHtml(profilePageResp.data.toString());
+            if (scrapedPhoto != null && scrapedPhoto.isNotEmpty) {
+              photoUrl = scrapedPhoto;
+            }
+          }
+        } catch (_) {}
+      }
+
+      // 3. Fallback to person/student API fields
       if (photoUrl == null || photoUrl.isEmpty) {
         photoUrl = p['photoUrl']?.toString() ??
             p['photo']?.toString() ??
@@ -270,6 +294,8 @@ class BmstuApiService {
           photoUrl = 'https://lks.bmstu.ru/media/avatar/${p['uuid']}';
         }
       }
+
+      _lastStageUuid = stage?['uuid']?.toString();
 
       return UserProfile(
         lastName: p['lastName']?.toString() ?? '',
@@ -746,10 +772,71 @@ class BmstuApiService {
     return sessions;
   }
 
-  // Get Session Results (from https://lks.bmstu.ru/session or cache)
-  Future<List<SemesterSession>> getSessionResults({bool forceRefresh = false}) async {
+  // Parse Session Results from official JSON API ($apiBase/student/$stageUuid/sessions)
+  static List<SemesterSession> parseSessionJson(Map<String, dynamic> json) {
+    final List<SemesterSession> sessions = [];
+    String? lastUpdated;
+    final rawDate = json['date']?.toString();
+    if (rawDate != null && rawDate.isNotEmpty) {
+      try {
+        final dt = DateTime.parse(rawDate).toLocal();
+        final day = dt.day.toString().padLeft(2, '0');
+        final month = dt.month.toString().padLeft(2, '0');
+        final year = dt.year;
+        final hour = dt.hour.toString().padLeft(2, '0');
+        final min = dt.minute.toString().padLeft(2, '0');
+        lastUpdated = 'Данные актуальны на $day.$month.$year $hour:$min';
+      } catch (_) {
+        lastUpdated = 'Данные актуальны на $rawDate';
+      }
+    }
+
+    final rawData = json['data'] as List? ?? [];
+    for (final item in rawData) {
+      if (item is! Map) continue;
+      final term = (item['term'] as num?)?.toInt() ?? 1;
+      final rawMarks = item['marks'] as List? ?? [];
+      final disciplines = <SessionDiscipline>[];
+
+      for (final m in rawMarks) {
+        if (m is! Map) continue;
+        final discName = m['disciplineName']?.toString() ?? '';
+        final dept = m['disciplineDepartment']?.toString() ?? '';
+        final control = m['testTitleShort']?.toString() ?? '';
+        final hours = (m['audlek'] as num?)?.toInt() ?? 0;
+        final grade = m['title']?.toString() ?? '';
+
+        if (discName.isNotEmpty) {
+          disciplines.add(SessionDiscipline(
+            title: discName,
+            department: dept,
+            controlType: control,
+            hours: hours,
+            grade: grade,
+          ));
+        }
+      }
+
+      sessions.add(SemesterSession(
+        semesterTitle: 'Семестр $term',
+        semesterNumber: term,
+        disciplines: disciplines,
+        lastUpdated: lastUpdated,
+      ));
+    }
+
+    sessions.sort((a, b) => b.semesterNumber.compareTo(a.semesterNumber));
+    return sessions;
+  }
+
+  // Get Session Results (from official API, HTML scraping, or cache)
+  Future<List<SemesterSession>> getSessionResults({
+    String? stageUuid,
+    bool forceRefresh = false,
+  }) async {
     const cacheKey = 'bmstu_session_results_cache';
     final prefs = await SharedPreferences.getInstance();
+    final targetStage = (stageUuid != null && stageUuid.isNotEmpty) ? stageUuid : _lastStageUuid;
 
     // 1. If not forcing refresh, try cache first if available
     if (!forceRefresh) {
@@ -764,7 +851,8 @@ class BmstuApiService {
           if (cachedList.isNotEmpty) {
             // Trigger background refresh if authenticated
             if (_isAuthenticated) {
-              _fetchAndCacheSessionResults(prefs, cacheKey).catchError((_) => <SemesterSession>[]);
+              _fetchAndCacheSessionResults(prefs, cacheKey, stageUuid: targetStage)
+                  .catchError((_) => <SemesterSession>[]);
             }
             return cachedList;
           }
@@ -774,7 +862,7 @@ class BmstuApiService {
 
     // 2. Fetch live data
     try {
-      final liveSessions = await _fetchAndCacheSessionResults(prefs, cacheKey);
+      final liveSessions = await _fetchAndCacheSessionResults(prefs, cacheKey, stageUuid: targetStage);
       if (liveSessions.isNotEmpty) return liveSessions;
     } catch (e) {
       // 3. On error, fallback to cache
@@ -795,17 +883,56 @@ class BmstuApiService {
   }
 
   Future<List<SemesterSession>> _fetchAndCacheSessionResults(
-      SharedPreferences prefs, String cacheKey) async {
-    final resp = await _dio.get('https://lks.bmstu.ru/session');
-    if (resp.statusCode == 200 && resp.data != null) {
-      final html = resp.data.toString();
-      final sessions = parseSessionHtml(html);
-      if (sessions.isNotEmpty) {
-        final jsonList = sessions.map((s) => s.toJson()).toList();
-        await prefs.setString(cacheKey, jsonEncode(jsonList));
-        return sessions;
-      }
+    SharedPreferences prefs,
+    String cacheKey, {
+    String? stageUuid,
+  }) async {
+    var targetStage = (stageUuid != null && stageUuid.isNotEmpty) ? stageUuid : _lastStageUuid;
+
+    // Resolve stageUuid from $apiBase/student if not known
+    if ((targetStage == null || targetStage.isEmpty) && _isAuthenticated) {
+      try {
+        final studentResp = await _dio.get('$apiBase/student');
+        if (studentResp.data is Map) {
+          final s = studentResp.data['data'] ?? studentResp.data;
+          final rawStages = s?['stages'] as List? ?? [];
+          if (rawStages.isNotEmpty && rawStages[0] is Map) {
+            targetStage = rawStages[0]['uuid']?.toString();
+            _lastStageUuid = targetStage;
+          }
+        }
+      } catch (_) {}
     }
+
+    // 1. Primary official JSON API endpoint
+    if (targetStage != null && targetStage.isNotEmpty) {
+      try {
+        final resp = await _dio.get('$apiBase/student/$targetStage/sessions');
+        if (resp.statusCode == 200 && resp.data is Map) {
+          final sessions = parseSessionJson(Map<String, dynamic>.from(resp.data as Map));
+          if (sessions.isNotEmpty) {
+            final jsonList = sessions.map((s) => s.toJson()).toList();
+            await prefs.setString(cacheKey, jsonEncode(jsonList));
+            return sessions;
+          }
+        }
+      } catch (_) {}
+    }
+
+    // 2. Fallback to HTML scraping
+    try {
+      final resp = await _dio.get('https://lks.bmstu.ru/session');
+      if (resp.statusCode == 200 && resp.data != null) {
+        final html = resp.data.toString();
+        final sessions = parseSessionHtml(html);
+        if (sessions.isNotEmpty) {
+          final jsonList = sessions.map((s) => s.toJson()).toList();
+          await prefs.setString(cacheKey, jsonEncode(jsonList));
+          return sessions;
+        }
+      }
+    } catch (_) {}
+
     return [];
   }
 }

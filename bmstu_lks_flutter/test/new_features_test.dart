@@ -350,6 +350,54 @@ void main() {
       expect(d3.title, 'Учебно-технологический практикум');
       expect(d3.isExcellent, isTrue);
     });
+
+    test('parseSessionJson correctly parses official LKS REST API payload', () {
+      final sampleJson = {
+        'date': '2026-10-01T18:46:43.857+03:00',
+        'data': [
+          {
+            'term': 1,
+            'marks': [
+              {
+                'disciplineName': 'Иностранный язык',
+                'disciplineDepartment': 'Л3',
+                'testTitleShort': 'Зач',
+                'audlek': 72,
+                'title': 'Зачтено'
+              },
+              {
+                'disciplineName': 'Математический анализ',
+                'disciplineDepartment': 'ФН1',
+                'testTitleShort': 'Экз',
+                'audlek': 180,
+                'title': 'Хорошо'
+              }
+            ]
+          },
+          {
+            'term': 2,
+            'marks': [
+              {
+                'disciplineName': 'Теоретическая механика',
+                'disciplineDepartment': 'ФН3',
+                'testTitleShort': 'Экз',
+                'audlek': 144,
+                'title': 'Не аттестован'
+              }
+            ]
+          }
+        ]
+      };
+
+      final sessions = BmstuApiService.parseSessionJson(sampleJson);
+      expect(sessions.length, 2);
+      expect(sessions.first.semesterNumber, 2);
+      expect(sessions.first.disciplines.first.title, 'Теоретическая механика');
+      expect(sessions.first.disciplines.first.isDebt, isTrue);
+      expect(sessions.last.semesterNumber, 1);
+      expect(sessions.last.disciplines.length, 2);
+      expect(sessions.last.lastUpdated, contains('01.10.2026'));
+    });
   });
 
   group('SessionScreen Widget Tests', () {

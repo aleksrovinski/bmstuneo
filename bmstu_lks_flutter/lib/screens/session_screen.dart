@@ -44,7 +44,10 @@ class _SessionScreenState extends State<SessionScreen> {
 
     final auth = context.read<AuthProvider>();
     try {
-      final results = await auth.apiService.getSessionResults(forceRefresh: forceRefresh);
+      final results = await auth.apiService.getSessionResults(
+        stageUuid: auth.userProfile?.stageUuid,
+        forceRefresh: forceRefresh,
+      );
       if (mounted) {
         setState(() {
           _sessions = results;
