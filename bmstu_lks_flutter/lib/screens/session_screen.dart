@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/session_result.dart';
 import '../providers/auth_provider.dart';
-import '../providers/progress_provider.dart';
 
 enum GradeFilter {
   all('Все'),
@@ -62,47 +61,6 @@ class _SessionScreenState extends State<SessionScreen> {
         });
       }
     }
-
-    // Fallback: If no sessions loaded from network/cache, try generating from ProgressProvider
-    if (_sessions.isEmpty && mounted) {
-      try {
-        final prog = context.read<ProgressProvider>();
-        final disciplines = prog.disciplines;
-        if (disciplines.isNotEmpty) {
-          final user = auth.userProfile;
-          final semNum = user?.semester ?? 1;
-          final fallbackDisciplines = disciplines.map((d) {
-            final grade = d.estimatedGrade != null
-                ? (d.estimatedGrade! >= 5
-                    ? 'Отлично'
-                    : d.estimatedGrade! == 4
-                        ? 'Хорошо'
-                        : d.estimatedGrade! == 3
-                            ? 'Удовлетворительно'
-                            : 'Не аттестован')
-                : (d.isPassed ? 'Зачтено' : '—');
-            return SessionDiscipline(
-              title: d.title,
-              department: '',
-              controlType: 'Зач',
-              hours: 72,
-              grade: grade,
-            );
-          }).toList();
-
-          setState(() {
-            _sessions = [
-              SemesterSession(
-                semesterTitle: 'Семестр $semNum',
-                semesterNumber: semNum,
-                disciplines: fallbackDisciplines,
-                lastUpdated: 'Текущий семестр (из прогресса)',
-              ),
-            ];
-          });
-        }
-      } catch (_) {}
-    }
   }
 
   @override
@@ -119,12 +77,6 @@ class _SessionScreenState extends State<SessionScreen> {
         ? _sessions.first.lastUpdated
         : null;
 
-    // Compute debts and passed across all displayed sessions
-    final allFilteredDisciplines = _getFilteredDisciplines();
-    final totalCount = allFilteredDisciplines.length;
-    final debtCount = allFilteredDisciplines.where((d) => d.isDebt).length;
-    final isAdmissionGranted = debtCount == 0 && totalCount > 0;
-
     return Scaffold(
       appBar: AppBar(
         title: Column(
@@ -135,7 +87,7 @@ class _SessionScreenState extends State<SessionScreen> {
               style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
             ),
             Text(
-              latestUpdate ?? user?.groupTitle ?? 'МГТУ им. Н.Э. Баумана',
+              user?.groupTitle ?? 'МГТУ им. Н.Э. Баумана',
               style: TextStyle(
                 fontSize: 12,
                 color: colorScheme.onSurfaceVariant,
@@ -164,25 +116,9 @@ class _SessionScreenState extends State<SessionScreen> {
             ? const Center(child: CircularProgressIndicator())
             : _sessions.isEmpty
                 ? _buildEmptyState(context)
-                : _buildSessionContent(context, isDark, isAdmissionGranted, debtCount),
+                : _buildSessionContent(context, isDark, latestUpdate),
       ),
     );
-  }
-
-  List<SessionDiscipline> _getFilteredDisciplines() {
-    final sessionsToScan = _selectedSemesterNumber == null
-        ? _sessions
-        : _sessions.where((s) => s.semesterNumber == _selectedSemesterNumber);
-
-    final list = <SessionDiscipline>[];
-    for (final s in sessionsToScan) {
-      for (final d in s.disciplines) {
-        if (_gradeFilter == GradeFilter.passed && !d.isPassed) continue;
-        if (_gradeFilter == GradeFilter.debts && !d.isDebt) continue;
-        list.add(d);
-      }
-    }
-    return list;
   }
 
   Widget _buildEmptyState(BuildContext context) {
@@ -231,8 +167,7 @@ class _SessionScreenState extends State<SessionScreen> {
   Widget _buildSessionContent(
     BuildContext context,
     bool isDark,
-    bool isAdmissionGranted,
-    int debtCount,
+    String? latestUpdate,
   ) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
@@ -245,52 +180,84 @@ class _SessionScreenState extends State<SessionScreen> {
       physics: const AlwaysScrollableScrollPhysics(),
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
       children: [
-        // 1. Semester & Filter Bar (Matching LKS dropdown)
+        // 1. "Данные актуальны на ..." (Matching LKS web)
+        if (latestUpdate != null && latestUpdate.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(left: 4, bottom: 10),
+            child: Text(
+              latestUpdate,
+              style: TextStyle(
+                fontStyle: FontStyle.italic,
+                fontSize: 13,
+                color: colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ),
+
+        // 2. Card header with Title & Dropdown (Matching LKS PrimeReact Card)
         Container(
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
-            color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
+            color: isDark ? colorScheme.surfaceContainer : Colors.white,
             borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: colorScheme.outlineVariant.withValues(alpha: 0.5)),
+            border: Border.all(
+              color: colorScheme.outlineVariant.withValues(alpha: isDark ? 0.3 : 0.6),
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: colorScheme.shadow.withValues(alpha: isDark ? 0.2 : 0.04),
+                blurRadius: 10,
+                offset: const Offset(0, 2),
+              ),
+            ],
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Row(
                 children: [
-                  const Icon(Icons.school_outlined, size: 20),
-                  const SizedBox(width: 8),
-                  const Text(
-                    'Семестр:',
-                    style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
+                  Expanded(
+                    child: Text(
+                      'Результаты сессий',
+                      style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.w900,
+                        color: colorScheme.onSurface,
+                        letterSpacing: -0.3,
+                      ),
+                    ),
                   ),
-                  const Spacer(),
-                  // LKS BMSTU Style Dropdown
+                  const SizedBox(width: 8),
+                  // PrimeReact Dropdown replica
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
                     decoration: BoxDecoration(
-                      color: theme.cardColor,
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: colorScheme.outline.withValues(alpha: 0.3)),
+                      color: isDark
+                          ? colorScheme.surfaceContainerHighest
+                          : colorScheme.surfaceContainerLowest,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                        color: colorScheme.outline.withValues(alpha: 0.3),
+                      ),
                     ),
                     child: DropdownButtonHideUnderline(
                       child: DropdownButton<int?>(
                         value: _selectedSemesterNumber,
                         isDense: true,
-                        icon: const Icon(Icons.arrow_drop_down_rounded),
+                        icon: const Icon(Icons.keyboard_arrow_down_rounded, size: 20),
                         items: [
                           const DropdownMenuItem<int?>(
                             value: null,
                             child: Text(
                               'Показать все',
-                              style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
+                              style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
                             ),
                           ),
                           ..._sessions.map((s) => DropdownMenuItem<int?>(
                                 value: s.semesterNumber,
                                 child: Text(
                                   s.semesterTitle,
-                                  style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
+                                  style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
                                 ),
                               )),
                         ],
@@ -305,7 +272,7 @@ class _SessionScreenState extends State<SessionScreen> {
                 ],
               ),
               const SizedBox(height: 12),
-              // Grade Filters
+              // Compact Filter Chips
               Row(
                 children: GradeFilter.values.map((f) {
                   final isSelected = _gradeFilter == f;
@@ -330,64 +297,9 @@ class _SessionScreenState extends State<SessionScreen> {
             ],
           ),
         ),
-        const SizedBox(height: 14),
-
-        // 2. Admission Status Banner
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-          decoration: BoxDecoration(
-            color: isAdmissionGranted
-                ? (isDark ? const Color(0xFF0F291E) : const Color(0xFFE8F5E9))
-                : (isDark ? const Color(0xFF331616) : const Color(0xFFFFEBEE)),
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(
-              color: isAdmissionGranted
-                  ? const Color(0xFF4CAF50).withValues(alpha: 0.4)
-                  : const Color(0xFFE53935).withValues(alpha: 0.4),
-            ),
-          ),
-          child: Row(
-            children: [
-              Icon(
-                isAdmissionGranted ? Icons.verified_rounded : Icons.warning_amber_rounded,
-                color: isAdmissionGranted ? const Color(0xFF2E7D32) : const Color(0xFFC62828),
-                size: 26,
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      isAdmissionGranted
-                          ? 'Допуск к сессии получен'
-                          : 'Имеются задолженности: $debtCount',
-                      style: TextStyle(
-                        fontWeight: FontWeight.w800,
-                        fontSize: 14,
-                        color: isAdmissionGranted
-                            ? (isDark ? const Color(0xFF81C784) : const Color(0xFF1B5E20))
-                            : (isDark ? const Color(0xFFE57373) : const Color(0xFFB71C1C)),
-                      ),
-                    ),
-                    Text(
-                      isAdmissionGranted
-                          ? 'Все дисциплины сданы в срок, долгов нет'
-                          : 'Обратитесь в деканат или к преподавателям для ликвидации задолженности',
-                      style: TextStyle(
-                        fontSize: 11.5,
-                        color: isDark ? Colors.white70 : Colors.black87,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
         const SizedBox(height: 16),
 
-        // 3. Tables for each Semester
+        // 3. Tables for each Semester (Matching LKS web table container)
         ...displayedSessions.map((session) => _buildSemesterTableCard(context, session, isDark)),
       ],
     );
@@ -409,55 +321,54 @@ class _SessionScreenState extends State<SessionScreen> {
     }
 
     return Card(
-      margin: const EdgeInsets.only(bottom: 18),
+      margin: const EdgeInsets.only(bottom: 20),
       elevation: 0,
+      color: isDark ? colorScheme.surfaceContainer : Colors.white,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
-        side: BorderSide(color: colorScheme.outlineVariant.withValues(alpha: 0.6)),
+        side: BorderSide(
+          color: colorScheme.outlineVariant.withValues(alpha: isDark ? 0.3 : 0.6),
+        ),
       ),
       clipBehavior: Clip.antiAlias,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Semester Header
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.4),
+          // Semester Header: <h1>Семестр N</h1>
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
             child: Row(
               children: [
                 Text(
                   session.semesterTitle,
-                  style: const TextStyle(
-                    fontSize: 16,
+                  style: TextStyle(
+                    fontSize: 19,
                     fontWeight: FontWeight.w900,
+                    color: colorScheme.onSurface,
                   ),
                 ),
                 const Spacer(),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                  decoration: BoxDecoration(
-                    color: colorScheme.primary.withValues(alpha: 0.12),
-                    borderRadius: BorderRadius.circular(6),
-                  ),
-                  child: Text(
-                    '${disciplines.length} ${disciplinesWord(disciplines.length)}',
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w700,
-                      color: colorScheme.primary,
-                    ),
+                Text(
+                  '${disciplines.length} ${disciplinesWord(disciplines.length)}',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: colorScheme.onSurfaceVariant,
                   ),
                 ),
               ],
             ),
           ),
 
-          // Table Header
+          // Table Header (p-datatable-thead replica)
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
             decoration: BoxDecoration(
-              color: isDark ? Colors.white.withValues(alpha: 0.04) : Colors.black.withValues(alpha: 0.03),
+              color: isDark
+                  ? Colors.white.withValues(alpha: 0.05)
+                  : const Color(0xFFF8FAFC),
               border: Border(
+                top: BorderSide(color: colorScheme.outlineVariant.withValues(alpha: 0.4)),
                 bottom: BorderSide(color: colorScheme.outlineVariant.withValues(alpha: 0.4)),
               ),
             ),
@@ -466,16 +377,19 @@ class _SessionScreenState extends State<SessionScreen> {
                 const Expanded(
                   child: Text(
                     'Дисциплина (Кафедра, тип сдачи)',
-                    style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800),
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w800,
+                    ),
                   ),
                 ),
                 SizedBox(
-                  width: 48,
+                  width: 44,
                   child: Text(
                     'Часы',
                     textAlign: TextAlign.center,
                     style: TextStyle(
-                      fontSize: 11.5,
+                      fontSize: 12,
                       fontWeight: FontWeight.w800,
                       color: colorScheme.onSurfaceVariant,
                     ),
@@ -486,14 +400,17 @@ class _SessionScreenState extends State<SessionScreen> {
                   child: Text(
                     'Оценка',
                     textAlign: TextAlign.center,
-                    style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800),
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w800,
+                    ),
                   ),
                 ),
               ],
             ),
           ),
 
-          // Table Rows
+          // Table Rows (p-datatable-tbody replica)
           ListView.separated(
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
@@ -501,64 +418,65 @@ class _SessionScreenState extends State<SessionScreen> {
             separatorBuilder: (_, index) => Divider(
               height: 1,
               thickness: 1,
-              color: colorScheme.outlineVariant.withValues(alpha: 0.3),
+              color: colorScheme.outlineVariant.withValues(alpha: 0.25),
             ),
             itemBuilder: (context, idx) {
               final d = disciplines[idx];
               final isOdd = idx.isOdd;
               return Container(
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                 color: isOdd
                     ? (isDark
                         ? Colors.white.withValues(alpha: 0.02)
-                        : Colors.black.withValues(alpha: 0.015))
+                        : Colors.black.withValues(alpha: 0.012))
                     : Colors.transparent,
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
                     // Col 1: Discipline Title & Department
                     Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            d.title,
-                            style: const TextStyle(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w700,
-                              height: 1.25,
-                            ),
-                          ),
-                          if (d.department.isNotEmpty || d.controlType.isNotEmpty) ...[
-                            const SizedBox(height: 2),
-                            Text(
-                              '(${d.department}${d.department.isNotEmpty && d.controlType.isNotEmpty ? ', ' : ''}${d.controlType})',
+                      child: RichText(
+                        text: TextSpan(
+                          children: [
+                            TextSpan(
+                              text: d.title,
                               style: TextStyle(
-                                fontSize: 11.5,
-                                fontWeight: FontWeight.w500,
-                                color: colorScheme.onSurfaceVariant,
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                                color: colorScheme.onSurface,
+                                height: 1.3,
                               ),
                             ),
+                            if (d.department.isNotEmpty || d.controlType.isNotEmpty)
+                              TextSpan(
+                                text: ' (${d.department}${d.department.isNotEmpty && d.controlType.isNotEmpty ? ', ' : ''}${d.controlType})',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w400,
+                                  color: colorScheme.onSurfaceVariant,
+                                  height: 1.3,
+                                ),
+                              ),
                           ],
-                        ],
+                        ),
                       ),
                     ),
 
                     // Col 2: Hours
                     SizedBox(
-                      width: 48,
+                      width: 44,
                       child: Text(
                         '${d.hours}',
                         textAlign: TextAlign.center,
                         style: TextStyle(
                           fontSize: 13,
-                          fontWeight: FontWeight.w600,
+                          fontWeight: FontWeight.w500,
                           color: colorScheme.onSurfaceVariant,
                         ),
                       ),
                     ),
 
-                    // Col 3: Grade Badge
+                    // Col 3: Grade Badge (Matching PrimeReact style)
                     SizedBox(
                       width: 105,
                       child: _buildGradeBadge(context, d, isDark),
@@ -575,45 +493,47 @@ class _SessionScreenState extends State<SessionScreen> {
 
   Widget _buildGradeBadge(BuildContext context, SessionDiscipline d, bool isDark) {
     Color bg;
-    Color text;
+    Color textColor;
     FontWeight weight = FontWeight.w600;
 
     if (d.isExcellent) {
-      bg = isDark ? const Color(0xFF0F381E) : const Color(0xFFE8F5E9);
-      text = isDark ? const Color(0xFF81C784) : const Color(0xFF2E7D32);
+      bg = isDark ? const Color(0xFF0F381E) : const Color(0xFFDCFCE7);
+      textColor = isDark ? const Color(0xFF4ADE80) : const Color(0xFF16A34A);
       weight = FontWeight.w900;
     } else if (d.isGood) {
-      bg = isDark ? const Color(0xFF3E320D) : const Color(0xFFFFF8E1);
-      text = isDark ? const Color(0xFFFFD54F) : const Color(0xFFF57F17);
-      weight = FontWeight.w800;
+      bg = isDark ? const Color(0xFF382A0A) : const Color(0xFFFEF9C3);
+      textColor = isDark ? const Color(0xFFFBBF24) : const Color(0xFFCA8A04);
+      weight = FontWeight.w700;
     } else if (d.isCreditPassed) {
-      bg = isDark ? const Color(0xFF0F381E) : const Color(0xFFE8F5E9);
-      text = isDark ? const Color(0xFF81C784) : const Color(0xFF2E7D32);
+      bg = isDark ? const Color(0xFF0F381E) : const Color(0xFFDCFCE7);
+      textColor = isDark ? const Color(0xFF4ADE80) : const Color(0xFF16A34A);
+      weight = FontWeight.w600;
     } else if (d.isSatisfactory) {
-      bg = isDark ? const Color(0xFF0F2B38) : const Color(0xFFE1F5FE);
-      text = isDark ? const Color(0xFF4FC3F7) : const Color(0xFF0277BD);
+      bg = isDark ? const Color(0xFF0C2A3D) : const Color(0xFFE0F2FE);
+      textColor = isDark ? const Color(0xFF38BDF8) : const Color(0xFF0284C7);
+      weight = FontWeight.w600;
     } else if (d.isDebt) {
-      bg = isDark ? const Color(0xFF381010) : const Color(0xFFFFEBEE);
-      text = isDark ? const Color(0xFFE57373) : const Color(0xFFC62828);
+      bg = isDark ? const Color(0xFF3B1212) : const Color(0xFFFEE2E2);
+      textColor = isDark ? const Color(0xFFF87171) : const Color(0xFFDC2626);
       weight = FontWeight.w800;
     } else {
       bg = isDark ? Colors.white10 : Colors.black.withValues(alpha: 0.05);
-      text = Theme.of(context).colorScheme.onSurfaceVariant;
+      textColor = Theme.of(context).colorScheme.onSurfaceVariant;
     }
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
         color: bg,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: text.withValues(alpha: 0.3)),
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: textColor.withValues(alpha: 0.25)),
       ),
       child: Text(
         d.grade.isEmpty ? '—' : d.grade,
         style: TextStyle(
           fontSize: 12,
           fontWeight: weight,
-          color: text,
+          color: textColor,
         ),
         textAlign: TextAlign.center,
         maxLines: 1,

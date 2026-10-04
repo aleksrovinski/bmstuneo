@@ -780,12 +780,15 @@ class BmstuApiService {
     if (rawDate != null && rawDate.isNotEmpty) {
       try {
         final dt = DateTime.parse(rawDate).toLocal();
-        final day = dt.day.toString().padLeft(2, '0');
-        final month = dt.month.toString().padLeft(2, '0');
-        final year = dt.year;
+        const months = [
+          'января', 'февраля', 'марта', 'апреля', 'мая', 'июня',
+          'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря'
+        ];
+        final day = dt.day;
+        final month = months[dt.month - 1];
         final hour = dt.hour.toString().padLeft(2, '0');
         final min = dt.minute.toString().padLeft(2, '0');
-        lastUpdated = 'Данные актуальны на $day.$month.$year $hour:$min';
+        lastUpdated = 'Данные актуальны на $day $month $hour:$min';
       } catch (_) {
         lastUpdated = 'Данные актуальны на $rawDate';
       }
@@ -794,7 +797,14 @@ class BmstuApiService {
     final rawData = json['data'] as List? ?? [];
     for (final item in rawData) {
       if (item is! Map) continue;
-      final term = (item['term'] as num?)?.toInt() ?? 1;
+      int term = 1;
+      final rawTerm = item['term'];
+      if (rawTerm is num) {
+        term = rawTerm.toInt();
+      } else if (rawTerm is String) {
+        term = int.tryParse(rawTerm) ?? 1;
+      }
+
       final rawMarks = item['marks'] as List? ?? [];
       final disciplines = <SessionDiscipline>[];
 
@@ -803,7 +813,13 @@ class BmstuApiService {
         final discName = m['disciplineName']?.toString() ?? '';
         final dept = m['disciplineDepartment']?.toString() ?? '';
         final control = m['testTitleShort']?.toString() ?? '';
-        final hours = (m['audlek'] as num?)?.toInt() ?? 0;
+        int hours = 0;
+        final rawAudlek = m['audlek'];
+        if (rawAudlek is num) {
+          hours = rawAudlek.toInt();
+        } else if (rawAudlek is String) {
+          hours = int.tryParse(rawAudlek) ?? 0;
+        }
         final grade = m['title']?.toString() ?? '';
 
         if (discName.isNotEmpty) {

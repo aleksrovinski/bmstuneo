@@ -396,7 +396,7 @@ void main() {
       expect(sessions.first.disciplines.first.isDebt, isTrue);
       expect(sessions.last.semesterNumber, 1);
       expect(sessions.last.disciplines.length, 2);
-      expect(sessions.last.lastUpdated, contains('01.10.2026'));
+      expect(sessions.last.lastUpdated, contains('1 октября'));
     });
   });
 
