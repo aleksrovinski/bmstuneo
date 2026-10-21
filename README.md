@@ -128,6 +128,19 @@ flutter analyze
 
 ## 📦 Сборка релизной версии
 
+### Подпись Android-релиза
+Релиз подписывается ключом загрузки (upload key), который хранится только локально.
+
+1. Создайте keystore (один раз; пароль и файл храните в надёжном месте — без них нельзя выпустить обновление):
+   ```bash
+   keytool -genkey -v -keystore bmstu_lks_flutter/android/upload-keystore.jks -keyalg RSA -keysize 2048 -validity 10000 -alias upload
+   ```
+2. Скопируйте `bmstu_lks_flutter/android/key.properties.example` в `key.properties` рядом с ним и впишите пароли.
+
+`key.properties` и `*.jks` исключены из git. На Codemagic вместо файла используются переменные `CM_KEYSTORE_PATH`, `CM_KEYSTORE_PASSWORD`, `CM_KEY_ALIAS`, `CM_KEY_PASSWORD`.
+
+Без ключа APK собирается с debug-подписью (для локальной проверки), а сборка AAB для Google Play завершается ошибкой.
+
 ### Android APK:
 ```bash
 cd bmstu_lks_flutter
