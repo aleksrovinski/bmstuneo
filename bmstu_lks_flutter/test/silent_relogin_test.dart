@@ -61,7 +61,7 @@ void main() {
           return ResponseBody.fromString('', 302, headers: {'location': ['https://sso.bmstu.ru/x']});
         }
         if (url.startsWith('https://sso.bmstu.ru/x')) {
-          return ResponseBody.fromString('<form action="https://sso.bmstu.ru/auth">', 200);
+          return ResponseBody.fromString('<form id="kc-form-login" action="https://sso.bmstu.ru/auth">', 200);
         }
         if (url.contains('sso.bmstu.ru/auth')) return ResponseBody.fromString('', 200);
         return ResponseBody.fromString('', 401);

@@ -165,4 +165,75 @@ void main() {
     expect(ok, isFalse);
     expect(auth.errorMessage, 'Нет подключения к серверу МГТУ. Проверьте интернет');
   });
+
+  group('Keycloak login form detection', () {
+    final page = Uri.parse('https://sso.bmstu.ru/realms/bmstu/protocol/openid-connect/auth?client_id=lks');
+    String? extract(String html) => BmstuApiService.extractLoginFormAction(html, page);
+
+    test('Picks the login form, not the first form on the page', () {
+      const html = '''
+        <form id="kc-locale-form" action="https://sso.bmstu.ru/realms/bmstu/locale" method="post"></form>
+        <form id="kc-form-login" onsubmit="login.disabled = true; return true;"
+              action="https://sso.bmstu.ru/realms/bmstu/login-actions/authenticate?session_code=a&amp;tab_id=b" method="post">
+      ''';
+      expect(
+        extract(html),
+        'https://sso.bmstu.ru/realms/bmstu/login-actions/authenticate?session_code=a&tab_id=b',
+      );
+    });
+
+    test('Falls back to the authenticate action and resolves relative URLs', () {
+      const html = '<form method="post" action="/realms/bmstu/login-actions/authenticate?x=1">';
+      expect(extract(html), 'https://sso.bmstu.ru/realms/bmstu/login-actions/authenticate?x=1');
+    });
+
+    test('Never returns an action on another host', () {
+      const html = '<form id="kc-form-login" action="https://evil.example.com/collect">';
+      expect(extract(html), isNull);
+    });
+
+    test('Returns null when there is no login form', () {
+      expect(extract('<form id="search" action="/search"></form>'), isNull);
+      expect(extract('<html><body>Технические работы</body></html>'), isNull);
+    });
+
+    test('Changed login page gives a clear error instead of posting the password anywhere', () async {
+      var posted = false;
+      final api = _apiWith((options) {
+        final url = options.uri.toString();
+        if (url.contains('/portal4/cookie/login')) {
+          return _text('', 302, headers: {'location': [_ssoUrl]});
+        }
+        if (options.method == 'POST') posted = true;
+        return _text('<form id="kc-locale-form" action="https://sso.bmstu.ru/locale">', 200);
+      });
+
+      await expectLater(
+        api.login('student', 'secret'),
+        throwsA(predicate((e) => e.toString().contains('Страница входа МГТУ изменилась'))),
+      );
+      expect(posted, isFalse);
+    });
+
+    test('Keycloak required action is not reported as wrong password', () async {
+      final api = _apiWith((options) {
+        final url = options.uri.toString();
+        if (url.contains('/portal4/cookie/login')) {
+          return _text('', 302, headers: {'location': [_ssoUrl]});
+        }
+        if (url.startsWith(_ssoUrl)) return _text(_ssoHtml, 200);
+        // After the password Keycloak asks to update it instead of redirecting back
+        return _text(
+          '<form id="kc-passwd-update-form" action="https://sso.bmstu.ru/realms/bmstu/login-actions/required-action?execution=UPDATE_PASSWORD">',
+          200,
+        );
+      });
+
+      await expectLater(
+        api.login('student', 'secret'),
+        throwsA(predicate((e) =>
+            e.toString().contains('дополнительное действие') && !e.toString().contains('Неверный'))),
+      );
+    });
+  });
 }

@@ -192,13 +192,10 @@ class BmstuApiService {
       final ssoPageResp = await _authDio.get<String>(ssoUrl);
       final ssoHtml = ssoPageResp.data ?? '';
 
-      final actionRegex = RegExp(r'''action=["']([^"']+)["']''', caseSensitive: false);
-      final match = actionRegex.firstMatch(ssoHtml);
-      if (match == null) {
-        throw Exception('Форма авторизации Keycloak не найдена');
+      final actionUrl = extractLoginFormAction(ssoHtml, ssoPageResp.realUri);
+      if (actionUrl == null) {
+        throw Exception('Страница входа МГТУ изменилась, вход через приложение временно недоступен');
       }
-
-      final actionUrl = match.group(1)!.replaceAll('&amp;', '&');
 
       // 3. Post Credentials to Keycloak
       final authResp = await _authDio.post(
@@ -232,6 +229,14 @@ class BmstuApiService {
             bodyStr.contains('Invalid username or password') ||
             bodyStr.contains('Неверное имя пользователя или пароль')) {
           throw Exception('Неверный логин или пароль студента');
+        }
+        // Keycloak answered with another page of its own (password change, OTP, terms...)
+        // instead of redirecting back to LKS: the session was not created
+        if (bodyStr.contains('login-actions') ||
+            bodyStr.contains('kc-form') ||
+            (callbackUrl?.contains('login-actions') ?? false)) {
+          throw Exception('Сервер авторизации МГТУ запросил дополнительное действие '
+              '(например, смену пароля). Войдите один раз на lks.bmstu.ru в браузере');
         }
       }
 
@@ -716,6 +721,39 @@ class BmstuApiService {
   }
 
   // Scrape student photo from HTML of https://lks.bmstu.ru/profile
+  /// Finds where the Keycloak login form posts credentials.
+  ///
+  /// Only the login form itself is accepted (id `kc-form-login`, or an action
+  /// pointing at `login-actions/authenticate`), and only on sso.bmstu.ru, so the
+  /// password is never sent to some other form or host on the page.
+  @visibleForTesting
+  static String? extractLoginFormAction(String html, Uri pageUri) {
+    final formTag = RegExp(r'<form\b[^>]*>', caseSensitive: false);
+    String? attr(String tag, String name) => RegExp(
+          '\\b$name\\s*=\\s*["\']([^"\']*)["\']',
+          caseSensitive: false,
+        ).firstMatch(tag)?.group(1);
+
+    String? byId;
+    String? byAction;
+    for (final m in formTag.allMatches(html)) {
+      final tag = m.group(0)!;
+      final action = attr(tag, 'action');
+      if (action == null || action.isEmpty) continue;
+      if (attr(tag, 'id') == 'kc-form-login') {
+        byId ??= action;
+      } else if (action.contains('login-actions/authenticate')) {
+        byAction ??= action;
+      }
+    }
+
+    final raw = byId ?? byAction;
+    if (raw == null) return null;
+    final resolved = pageUri.resolve(raw.replaceAll('&amp;', '&'));
+    if (resolved.scheme != 'https' || resolved.host != 'sso.bmstu.ru') return null;
+    return resolved.toString();
+  }
+
   static String? parseProfilePhotoHtml(String html) {
     final imgRegex = RegExp(r'<img[^>]+>', caseSensitive: false);
     for (final match in imgRegex.allMatches(html)) {
