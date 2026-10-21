@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:dio/dio.dart';
 import 'package:cookie_jar/cookie_jar.dart';
 import 'package:dio_cookie_manager/dio_cookie_manager.dart';
@@ -14,6 +15,35 @@ import 'bmstu_groups_catalog.dart';
 class BmstuAuthException implements Exception {
   final String message;
   BmstuAuthException([this.message = 'Сессия устарела или требуется повторная авторизация']);
+  @override
+  String toString() => message;
+}
+
+// Transport-level failure (no network, timeout, server down) as opposed to bad credentials
+class BmstuNetworkException implements Exception {
+  final String message;
+  BmstuNetworkException(this.message);
+
+  factory BmstuNetworkException.fromDio(DioException e) {
+    switch (e.type) {
+      case DioExceptionType.connectionTimeout:
+      case DioExceptionType.sendTimeout:
+      case DioExceptionType.receiveTimeout:
+      case DioExceptionType.transformTimeout:
+        return BmstuNetworkException('Сервер МГТУ не отвечает. Попробуйте позже');
+      case DioExceptionType.badCertificate:
+        return BmstuNetworkException('Не удалось установить защищённое соединение с сервером МГТУ');
+      case DioExceptionType.badResponse:
+        final code = e.response?.statusCode;
+        return BmstuNetworkException('Сервер МГТУ временно недоступен${code != null ? ' (код $code)' : ''}');
+      case DioExceptionType.cancel:
+        return BmstuNetworkException('Запрос к серверу МГТУ был отменён');
+      case DioExceptionType.connectionError:
+      case DioExceptionType.unknown:
+        return BmstuNetworkException('Нет подключения к серверу МГТУ. Проверьте интернет');
+    }
+  }
+
   @override
   String toString() => message;
 }
@@ -188,6 +218,13 @@ class BmstuApiService {
 
       _isAuthenticated = true;
       return profile;
+    } on DioException catch (e) {
+      _isAuthenticated = false;
+      final code = e.response?.statusCode;
+      if (code == 401 || code == 403) {
+        throw Exception('Неверный логин или пароль студента');
+      }
+      throw BmstuNetworkException.fromDio(e);
     } catch (e) {
       _isAuthenticated = false;
       rethrow;
@@ -319,7 +356,11 @@ class BmstuApiService {
         agreements: parsedAgreements,
         stages: parsedStages,
       );
+    } on DioException {
+      // Network failures must reach the caller, not look like "not logged in"
+      rethrow;
     } catch (e) {
+      debugPrint('[BmstuApiService] Failed to parse user profile: $e');
       return null;
     }
   }
