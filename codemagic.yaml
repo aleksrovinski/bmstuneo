@@ -18,7 +18,6 @@ workflows:
       cocoapods: default
       vars:
         BUNDLE_ID: "ru.bmstu.neo"
-        APP_STORE_APPLE_ID: 0 # Fill in Apple ID from App Store Connect once app is created
 
     scripts:
       - name: Set up code signing settings on Xcode project
@@ -42,11 +41,11 @@ workflows:
           flutter analyze
           flutter test
 
+      # Version and build number come from `version:` in pubspec.yaml (e.g. 1.3.0+9).
+      # Bump the +N part before each upload: TestFlight rejects a build number it already has.
       - name: Build Flutter iOS release IPA
         script: |
           flutter build ipa --release \
-            --build-name=1.0.0 \
-            --build-number=$BUILD_NUMBER \
             --export-options-plist=/Users/builder/export_options.plist
 
     artifacts:
@@ -60,9 +59,3 @@ workflows:
         auth: integration # Uses the App Store Connect API key configured in Codemagic
         submit_to_testflight: true
         expire_build_submitted_for_testing: false
-      email:
-        recipients:
-          - nesen@example.com
-        notify:
-          success: true
-          failure: true
