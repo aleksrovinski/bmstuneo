@@ -46,6 +46,29 @@ class FailingApiService extends BmstuApiService {
   }
 }
 
+// Mock API service that logs in without touching the network
+class SuccessfulApiService extends BmstuApiService {
+  @override
+  Future<UserProfile?> login(String username, String password) async => UserProfile(
+        lastName: 'Тестов',
+        firstName: 'Иван',
+        middleName: 'Петрович',
+        groupTitle: 'ИУ7-43Б',
+        groupUuid: 'test-group-uuid',
+        stageUuid: 'test-stage-uuid',
+      );
+}
+
+// Secure storage that is unavailable (e.g. broken Keystore): every call fails
+class ThrowingSecureStorage implements FlutterSecureStorage {
+  @override
+  dynamic noSuchMethod(Invocation invocation) {
+    final error = Exception('secure storage unavailable');
+    if (invocation.memberName == #read) return Future<String?>.error(error);
+    return Future<void>.error(error);
+  }
+}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -141,6 +164,54 @@ void main() {
       final cleared = await authStorage.getCredentials();
       expect(cleared['username'], isNull);
       expect(cleared['password'], isNull);
+    });
+
+    test('saveCredentials never falls back to plaintext when secure storage fails', () async {
+      SharedPreferences.setMockInitialValues({});
+
+      final authStorage = AuthStorage(secureStorage: ThrowingSecureStorage());
+      await expectLater(
+        authStorage.saveCredentials('student', 'secret'),
+        throwsA(isA<AuthStorageException>()),
+      );
+
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.containsKey('bmstu_username'), isFalse);
+      expect(prefs.containsKey('bmstu_password'), isFalse);
+    });
+
+    test('Legacy plaintext is wiped even if migration to secure storage fails', () async {
+      SharedPreferences.setMockInitialValues({
+        'bmstu_username': 'student_legacy',
+        'bmstu_password': 'super_secret_password',
+      });
+
+      final authStorage = AuthStorage(secureStorage: ThrowingSecureStorage());
+      final creds = await authStorage.getCredentials();
+
+      expect(creds['username'], 'student_legacy');
+      expect(creds['password'], 'super_secret_password');
+
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.containsKey('bmstu_username'), isFalse);
+      expect(prefs.containsKey('bmstu_password'), isFalse);
+    });
+
+    test('Login succeeds without remembering credentials when secure storage fails', () async {
+      SharedPreferences.setMockInitialValues({});
+
+      final authProvider = AuthProvider(
+        apiService: SuccessfulApiService(),
+        authStorage: AuthStorage(secureStorage: ThrowingSecureStorage()),
+      );
+      final ok = await authProvider.login('student', 'secret');
+
+      expect(ok, isTrue);
+      expect(authProvider.isFullAuth, isTrue);
+      expect(authProvider.errorMessage, isNull);
+
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.containsKey('bmstu_password'), isFalse);
     });
   });
 

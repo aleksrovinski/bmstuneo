@@ -172,7 +172,12 @@ class AuthProvider with ChangeNotifier {
         _userProfile = profile;
         _isGuest = false;
         if (rememberMe) {
-          await authStorage.saveCredentials(username.trim(), password);
+          try {
+            await authStorage.saveCredentials(username.trim(), password);
+          } on AuthStorageException catch (e) {
+            // Session stays valid; credentials just won't survive an app restart
+            debugPrint('[AuthProvider] Credentials not remembered: $e');
+          }
         }
 
         // Save cached profile and clear guest flag
