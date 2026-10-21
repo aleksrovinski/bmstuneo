@@ -19,6 +19,7 @@ class AuthProvider with ChangeNotifier {
   bool _isGuest = false;
   bool _isLoading = false;
   String? _errorMessage;
+  Future<bool>? _reloginInFlight;
 
   String _guestGroupTitle = 'ИУ7-43Б';
   String _guestGroupUuid = '08e4210a-47ca-11ee-814c-005056961205';
@@ -129,8 +130,21 @@ class AuthProvider with ChangeNotifier {
     return false;
   }
 
-  // Silent background re-authentication without clearing UI state
-  Future<bool> reloginSilently() async {
+  // Silent background re-authentication without clearing UI state.
+  // Concurrent callers (API interceptor, providers, screens) share one SSO login.
+  Future<bool> reloginSilently() {
+    final pending = _reloginInFlight;
+    if (pending != null) return pending;
+
+    final relogin = _reloginSilently();
+    _reloginInFlight = relogin;
+    relogin.whenComplete(() {
+      if (identical(_reloginInFlight, relogin)) _reloginInFlight = null;
+    });
+    return relogin;
+  }
+
+  Future<bool> _reloginSilently() async {
     try {
       final creds = await authStorage.getCredentials();
       final user = creds['username'];

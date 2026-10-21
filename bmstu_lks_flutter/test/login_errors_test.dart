@@ -57,13 +57,13 @@ ResponseBody Function(RequestOptions) _ssoFlowThen(ResponseBody Function(Request
 
 BmstuApiService _apiWith(ResponseBody Function(RequestOptions) handler) {
   final api = BmstuApiService();
-  api.dio.httpClientAdapter = FakeAdapter(handler);
+  api.httpClientAdapter = FakeAdapter(handler);
   return api;
 }
 
 BmstuApiService _apiThrowing(DioExceptionType type) {
   final api = BmstuApiService();
-  api.dio.httpClientAdapter = FakeAdapter(
+  api.httpClientAdapter = FakeAdapter(
     (options) => throw DioException(requestOptions: options, type: type),
   );
   return api;

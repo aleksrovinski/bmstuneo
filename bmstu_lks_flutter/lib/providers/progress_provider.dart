@@ -257,14 +257,9 @@ class ProgressProvider with ChangeNotifier {
       _isLoading = false;
       notifyListeners();
     } catch (e) {
-      debugPrint('[ProgressProvider] Error loading progress: $e. Attempting auto-relogin...');
-      if (!isRetry && onSilentRelogin != null) {
-        final reloginSuccess = await onSilentRelogin!();
-        if (reloginSuccess) {
-          debugPrint('[ProgressProvider] Silent relogin succeeded, retrying loadProgress...');
-          return await loadProgress(_stageUuid, isRetry: true);
-        }
-      }
+      // Not an auth failure (offline, timeout, server error): relogging in won't help.
+      // Expired sessions surface as BmstuAuthException above or are retried by the API interceptor.
+      debugPrint('[ProgressProvider] Error loading progress: $e');
 
       if (_disciplines.isEmpty) {
         final cached = await _loadProgressFromCache(stageUuid);

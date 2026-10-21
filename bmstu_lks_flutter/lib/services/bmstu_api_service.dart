@@ -71,16 +71,22 @@ class TeacherSearchItem {
 class BmstuApiService {
   static const String apiBase = 'https://lks.bmstu.ru/lks-back/api/v1';
 
-  final Dio _dio = Dio(
-    BaseOptions(
-      connectTimeout: const Duration(seconds: 12),
-      receiveTimeout: const Duration(seconds: 12),
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) BMSTU-LKS-Flutter/1.0',
-        'Accept': 'application/json',
-      },
-    ),
-  );
+  static BaseOptions _baseOptions() => BaseOptions(
+        connectTimeout: const Duration(seconds: 12),
+        receiveTimeout: const Duration(seconds: 12),
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) BMSTU-LKS-Flutter/1.0',
+          'Accept': 'application/json',
+        },
+      );
+
+  static const _kRetriedAfterRelogin = 'bmstu_retried_after_relogin';
+
+  // Regular API traffic; recovers from an expired session via [onSilentRelogin]
+  final Dio _dio = Dio(_baseOptions());
+  // SSO login and profile fetch. Shares cookies with [_dio] but has no relogin
+  // interceptor, so a 401 during login fails the login instead of waiting on itself.
+  final Dio _authDio = Dio(_baseOptions());
 
   final CookieJar cookieJar = CookieJar();
   Dio get dio => _dio;
@@ -88,53 +94,73 @@ class BmstuApiService {
   String? _lastStageUuid;
   String? get lastStageUuid => _lastStageUuid;
   Future<bool> Function()? onSilentRelogin;
-  bool _isRelogging = false;
+  Future<bool>? _reloginInFlight;
 
   BmstuApiService() {
+    _authDio.interceptors.add(CookieManager(cookieJar));
     _dio.interceptors.add(CookieManager(cookieJar));
     _dio.interceptors.add(
-      QueuedInterceptorsWrapper(
+      InterceptorsWrapper(
         onError: (DioException err, handler) async {
-          final statusCode = err.response?.statusCode;
-          final responseData = err.response?.data?.toString() ?? '';
-          final isAuthError = statusCode == 401 ||
-              statusCode == 403 ||
-              responseData.contains('login-actions') ||
-              responseData.contains('auth.bmstu.ru');
-
-          final path = err.requestOptions.path;
-          final isLoginPath = path.contains('/cookie/login') ||
-              path.contains('sso.bmstu.ru') ||
-              path.contains('/callback/kc');
-
-          if (isAuthError && !isLoginPath && onSilentRelogin != null && !_isRelogging) {
-            _isRelogging = true;
-            try {
-              final ok = await onSilentRelogin!();
-              _isRelogging = false;
-              if (ok) {
-                final req = err.requestOptions;
-                final response = await _dio.request(
-                  req.path,
-                  data: req.data,
-                  queryParameters: req.queryParameters,
-                  options: Options(
-                    method: req.method,
-                    headers: req.headers,
-                    contentType: req.contentType,
-                    responseType: req.responseType,
-                  ),
-                );
-                return handler.resolve(response);
-              }
-            } catch (_) {
-              _isRelogging = false;
-            }
+          final req = err.requestOptions;
+          if (!_isSessionExpired(err) ||
+              req.extra[_kRetriedAfterRelogin] == true ||
+              onSilentRelogin == null) {
+            return handler.next(err);
           }
-          return handler.next(err);
+
+          if (!await _reloginOnce()) return handler.next(err);
+
+          try {
+            // Drop the stale cookie header so CookieManager sends the fresh session
+            final retry = req.copyWith(
+              headers: Map.of(req.headers)..remove('cookie'),
+              extra: {...req.extra, _kRetriedAfterRelogin: true},
+            );
+            return handler.resolve(await _dio.fetch(retry));
+          } on DioException catch (e) {
+            return handler.next(e);
+          }
         },
       ),
     );
+  }
+
+  /// Replaces the HTTP client of both Dio instances (tests use a fake one).
+  @visibleForTesting
+  set httpClientAdapter(HttpClientAdapter adapter) {
+    _dio.httpClientAdapter = adapter;
+    _authDio.httpClientAdapter = adapter;
+  }
+
+  static bool _isSessionExpired(DioException err) {
+    final statusCode = err.response?.statusCode;
+    final responseData = err.response?.data?.toString() ?? '';
+    return statusCode == 401 ||
+        statusCode == 403 ||
+        responseData.contains('login-actions') ||
+        responseData.contains('auth.bmstu.ru');
+  }
+
+  // Requests that fail together share one relogin instead of each starting its own
+  Future<bool> _reloginOnce() {
+    final pending = _reloginInFlight;
+    if (pending != null) return pending;
+
+    final relogin = () async {
+      try {
+        return await onSilentRelogin!();
+      } catch (e) {
+        debugPrint('[BmstuApiService] Silent relogin failed: $e');
+        return false;
+      }
+    }();
+    _reloginInFlight = relogin;
+    // whenComplete always fires asynchronously, i.e. after the assignment above
+    relogin.whenComplete(() {
+      if (identical(_reloginInFlight, relogin)) _reloginInFlight = null;
+    });
+    return relogin;
   }
 
   bool get isAuthenticated => _isAuthenticated;
@@ -142,10 +168,9 @@ class BmstuApiService {
   // Real-time Keycloak SSO Login
   Future<UserProfile?> login(String username, String password) async {
     try {
-      _dio.options.headers['User-Agent'] = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) BMSTU-LKS-Flutter/1.0';
 
       // 1. Initial request to LKS login endpoint (gets redirected to sso.bmstu.ru)
-      final initResp = await _dio.get<String>(
+      final initResp = await _authDio.get<String>(
         'https://lks.bmstu.ru/portal4/cookie/login',
         options: Options(
           followRedirects: false,
@@ -155,7 +180,7 @@ class BmstuApiService {
 
       String? ssoUrl = initResp.headers.value('location');
       if (ssoUrl == null || !ssoUrl.contains('sso.bmstu.ru')) {
-        final resp2 = await _dio.get<String>('https://lks.bmstu.ru/portal4/cookie/login');
+        final resp2 = await _authDio.get<String>('https://lks.bmstu.ru/portal4/cookie/login');
         ssoUrl = resp2.realUri.toString();
       }
 
@@ -164,7 +189,7 @@ class BmstuApiService {
       }
 
       // 2. Fetch Keycloak HTML Form
-      final ssoPageResp = await _dio.get<String>(ssoUrl);
+      final ssoPageResp = await _authDio.get<String>(ssoUrl);
       final ssoHtml = ssoPageResp.data ?? '';
 
       final actionRegex = RegExp(r'''action=["']([^"']+)["']''', caseSensitive: false);
@@ -176,7 +201,7 @@ class BmstuApiService {
       final actionUrl = match.group(1)!.replaceAll('&amp;', '&');
 
       // 3. Post Credentials to Keycloak
-      final authResp = await _dio.post(
+      final authResp = await _authDio.post(
         actionUrl,
         data: {
           'username': username,
@@ -193,7 +218,7 @@ class BmstuApiService {
 
       final callbackUrl = authResp.headers.value('location');
       if (callbackUrl != null && callbackUrl.contains('/portal4/upstream/callback/kc')) {
-        await _dio.get(
+        await _authDio.get(
           callbackUrl,
           options: Options(
             followRedirects: false,
@@ -234,14 +259,14 @@ class BmstuApiService {
   // Fetch Student Profile from /person and /student
   Future<UserProfile?> fetchUserProfile() async {
     try {
-      final personResp = await _dio.get('$apiBase/person');
+      final personResp = await _authDio.get('$apiBase/person');
       final personData = personResp.data is Map ? personResp.data : null;
       if (personData == null) return null;
 
       final p = personData['data'] ?? personData;
       if (p['firstName'] == null) return null;
 
-      final studentResp = await _dio.get('$apiBase/student');
+      final studentResp = await _authDio.get('$apiBase/student');
       final studentData = studentResp.data is Map ? studentResp.data : null;
       final s = studentData?['data'] ?? studentData;
       final rawStages = s?['stages'] as List? ?? [];
@@ -263,7 +288,7 @@ class BmstuApiService {
 
       String? qrUrl;
       try {
-        final qrResp = await _dio.get('$apiBase/student/qr');
+        final qrResp = await _authDio.get('$apiBase/student/qr');
         final qrData = qrResp.data is Map ? qrResp.data : null;
         final q = qrData?['data'] ?? qrData;
         qrUrl = q?['qr'] as String?;
@@ -277,7 +302,7 @@ class BmstuApiService {
 
       // 1. Primary official endpoint: GET $apiBase/student/photo
       try {
-        final photoResp = await _dio.get('$apiBase/student/photo');
+        final photoResp = await _authDio.get('$apiBase/student/photo');
         if (photoResp.statusCode == 200 && photoResp.data is Map) {
           final rawPhoto = (photoResp.data as Map)['photo']?.toString();
           if (rawPhoto != null && rawPhoto.isNotEmpty) {
@@ -297,7 +322,7 @@ class BmstuApiService {
       // 2. Scrape student photo from https://lks.bmstu.ru/profile (_img_1rxc3_40 _visible_1rxc3_45)
       if (photoUrl == null || photoUrl.isEmpty) {
         try {
-          final profilePageResp = await _dio.get('https://lks.bmstu.ru/profile');
+          final profilePageResp = await _authDio.get('https://lks.bmstu.ru/profile');
           if (profilePageResp.statusCode == 200 && profilePageResp.data != null) {
             final scrapedPhoto = parseProfilePhotoHtml(profilePageResp.data.toString());
             if (scrapedPhoto != null && scrapedPhoto.isNotEmpty) {
