@@ -1,0 +1,16 @@
+name: bmstu_neo_push
+description: Push server for BMSTU neo — registers devices and sends silent "sync" pushes (APNs, FCM).
+publish_to: none
+version: 0.1.0
+
+environment:
+  sdk: ^3.13.0
+dependencies:
+  crypto: ^3.0.7
+  dart_jsonwebtoken: ^3.4.1
+  http2: ^3.1.0
+  shelf: ^1.4.3
+  shelf_router: ^1.1.5
+dev_dependencies:
+  lints: ^6.1.0
+  test: ^1.33.0
