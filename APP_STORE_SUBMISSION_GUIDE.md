@@ -25,7 +25,10 @@
    - `APP_STORE_CONNECT_ISSUER_ID`
    - `APP_STORE_CONNECT_KEY_IDENTIFIER`
    - `APP_STORE_CONNECT_PRIVATE_KEY`
-5. Нажмите **Start new build** -> выберите workflow `BMSTU neo iOS (TestFlight & App Store)`.
+5. Когда сервер push-уведомлений развёрнут, добавьте его адрес в команду сборки в `codemagic.yaml`:
+   `flutter build ipa --release --dart-define=PUSH_SERVER_URL=https://...`. Без него приложение
+   работает, но не регистрируется для тихих push.
+6. Нажмите **Start new build** -> выберите workflow `BMSTU neo iOS (TestFlight & App Store)`.
    Codemagic соберет проект на macOS, автоматически подпишет сертификатом Apple Distribution и загрузит сборку в **TestFlight**.
 
 ---
@@ -86,8 +89,12 @@ BMSTU neo — современный, быстрый и удобный моби�
 
 ### URL Политики конфиденциальности (Privacy Policy URL):
 ```text
-https://ваша-ссылка-на-github-pages-или-notion/PRIVACY_POLICY
+https://github.com/aleksrovinski/bmstuneo/blob/main/PRIVACY_POLICY.md
 ```
+
+### App Privacy (анкета конфиденциальности)
+* **Identifiers → Device ID**: push-токен для тихих уведомлений; не связан с личностью, не используется для трекинга.
+* Остальные категории: данные не собираются (оценки и расписание остаются на устройстве).
 
 ### URL Поддержки (Support URL):
 ```text

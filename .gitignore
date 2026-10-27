@@ -1,5 +1,5 @@
 # ==============================================================================
-# BMSTU Neo — Git Ignore Configuration
+# BMSTU neo app — Git Ignore Configuration
 # ==============================================================================
 
 # --- Sensitive Personal Data & Reverse-Engineering Fixtures ---
@@ -32,6 +32,13 @@ local.properties
 **/xcuserdata/
 
 # --- Flutter & Dart Build Artifacts ---
+/build/
+**/ios/Flutter/.last_build_id
+/android/app/debug
+/android/app/profile
+/android/app/release
+migrate_working_dir/
+.swiftpm/
 .dart_tool/
 .flutter-plugins
 .flutter-plugins-dependencies
@@ -49,16 +56,6 @@ local.properties
 **/flutter/ephemeral/
 **/Pods/
 **/.symlinks/
-
-# Visual Studio / Windows build files
-**/windows/x64/
-**/windows/x86/
-*.suo
-*.user
-*.userosscache
-*.sln.docstates
-*.[Cc]ache
-!*.[Cc]ache/
 
 # Symbolication & Obfuscation
 app.*.symbols

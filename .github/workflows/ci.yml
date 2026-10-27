@@ -28,13 +28,10 @@ jobs:
           cache: true
 
       - name: Install dependencies
-        working-directory: ./bmstu_lks_flutter
         run: flutter pub get
 
       - name: Analyze code
-        working-directory: ./bmstu_lks_flutter
         run: flutter analyze
 
       - name: Run unit & widget tests
-        working-directory: ./bmstu_lks_flutter
         run: flutter test
