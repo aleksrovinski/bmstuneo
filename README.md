@@ -47,7 +47,6 @@ app/
 ├── tool/                утилиты: обновление каталога групп, тестовые push
 ├── server/              сервер тихих push-уведомлений (Dart) — см. server/README.md
 ├── docs/                проектная документация
-├── codemagic.yaml       сборка iOS и выгрузка в TestFlight
 └── .github/workflows/   CI: анализ и тесты
 ```
 
@@ -113,14 +112,18 @@ flutter build apk --release --dart-define=PUSH_SERVER_URL=https://push.example.r
 flutter build appbundle --release --dart-define=PUSH_SERVER_URL=https://push.example.ru
 ```
 
-`key.properties` и `*.jks` исключены из git. На Codemagic вместо файла используются переменные
+`key.properties` и `*.jks` исключены из git. На CI вместо файла можно задать переменные окружения
 `CM_KEYSTORE_PATH`, `CM_KEYSTORE_PASSWORD`, `CM_KEY_ALIAS`, `CM_KEY_PASSWORD`. Без ключа APK
 подписывается debug-ключом, а сборка AAB завершается ошибкой.
 
 ### iOS
 
-Собирается и выгружается в TestFlight через Codemagic (`codemagic.yaml`). Настройка и
-метаданные App Store — в [APP_STORE_SUBMISSION_GUIDE.md](APP_STORE_SUBMISSION_GUIDE.md).
+```bash
+flutter build ipa --release --dart-define=PUSH_SERVER_URL=https://push.example.ru
+```
+
+Готовый архив выгружается в TestFlight через Xcode Organizer или Transporter. Метаданные и
+прохождение модерации App Store — в [APP_STORE_SUBMISSION_GUIDE.md](APP_STORE_SUBMISSION_GUIDE.md).
 
 ## Участие в разработке
 

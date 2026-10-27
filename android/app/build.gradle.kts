@@ -9,7 +9,7 @@ plugins {
 }
 
 // Release signing comes from android/key.properties (see key.properties.example) or,
-// on Codemagic, from its CM_KEYSTORE_* variables. Neither the file nor the keystore is committed.
+// on CI, from CM_KEYSTORE_* environment variables. Neither the file nor the keystore is committed.
 val keystorePropertiesFile = rootProject.file("key.properties")
 val keystoreProperties = Properties().apply {
     if (keystorePropertiesFile.exists()) {

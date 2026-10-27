@@ -1,35 +1,22 @@
-# Руководство по публикации BMSTU neo в Apple App Store и настройке Codemagic
+# Руководство по публикации BMSTU neo в Apple App Store
 
-Данное руководство содержит все необходимые метаданные, инструкции для прохождения модерации Apple App Store Review и настройки сборки в Codemagic.
+Данное руководство содержит все необходимые метаданные, инструкции по сборке и прохождению модерации Apple App Store Review.
 
 ---
 
-## 1. Настройка Codemagic CI/CD
+## 1. Сборка и выгрузка в TestFlight
 
-### Шаг 1. Создание App Store Connect API Key
-1. Перейдите в [App Store Connect](https://appstoreconnect.apple.com/) -> **Users and Access** -> вкладка **Integrations** -> **App Store Connect API**.
-2. Нажмите **+** (Generate API Key).
-3. Укажите имя: `Codemagic CI`.
-4. Роль: **App Manager** или **Admin**.
-5. Запишите:
-   * **Issuer ID** (UUID вверху страницы).
-   * **Key ID** (10-значный идентификатор ключа).
-   * Скачайте файл ключа: `AuthKey_XXXXXXXXXX.p8` (скачать можно только один раз!).
-
-### Шаг 2. Добавление проекта в Codemagic
-1. Войдите в [Codemagic.io](https://codemagic.io/).
-2. Добавьте репозиторий проекта из GitHub / GitLab / Bitbucket.
-3. В настройках команды (*Teams -> Integrations*) подключите **Apple Developer Portal** / **App Store Connect API**:
-   - Вставьте Issuer ID, Key ID и содержимое файла `.p8`.
-4. В настройках приложения в Codemagic создайте Environment Variable Group: `app_store_credentials`:
-   - `APP_STORE_CONNECT_ISSUER_ID`
-   - `APP_STORE_CONNECT_KEY_IDENTIFIER`
-   - `APP_STORE_CONNECT_PRIVATE_KEY`
-5. Когда сервер push-уведомлений развёрнут, добавьте его адрес в команду сборки в `codemagic.yaml`:
-   `flutter build ipa --release --dart-define=PUSH_SERVER_URL=https://...`. Без него приложение
-   работает, но не регистрируется для тихих push.
-6. Нажмите **Start new build** -> выберите workflow `BMSTU neo iOS (TestFlight & App Store)`.
-   Codemagic соберет проект на macOS, автоматически подпишет сертификатом Apple Distribution и загрузит сборку в **TestFlight**.
+1. Увеличьте номер сборки (число после `+` в `version:` в `pubspec.yaml`): TestFlight не принимает
+   номер, который уже был.
+2. Соберите архив. Когда сервер push-уведомлений развёрнут, передайте его адрес — без него
+   приложение работает, но не регистрируется для тихих push:
+   ```bash
+   flutter build ipa --release --dart-define=PUSH_SERVER_URL=https://...
+   ```
+3. Откройте `build/ios/archive/Runner.xcarchive` в Xcode (**Window → Organizer**) и нажмите
+   **Distribute App → App Store Connect**, либо загрузите `build/ios/ipa/*.ipa` через приложение
+   **Transporter**. Подпись Apple Distribution Xcode выполнит автоматически (Automatically manage signing).
+4. Через 10–30 минут сборка появится в App Store Connect → TestFlight.
 
 ---
 
