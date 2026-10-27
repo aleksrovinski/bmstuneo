@@ -3,7 +3,7 @@
 Registers app installations and wakes them with **silent pushes** (`{"type": "sync"}`) on a
 schedule. Woken apps refresh progress from LKS with their own session and notify the student
 locally. The server never sees LKS credentials, grades or names — only push tokens, the
-platform and the group UUID. See `docs/PUSH_NOTIFICATIONS_PLAN.md` for the overall design.
+platform and the group UUID.
 
 ## API
 

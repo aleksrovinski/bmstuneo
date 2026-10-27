@@ -46,7 +46,6 @@ app/
 ├── test/                тесты (flutter test)
 ├── tool/                утилиты: обновление каталога групп, тестовые push
 ├── server/              сервер тихих push-уведомлений (Dart) — см. server/README.md
-├── docs/                проектная документация
 └── .github/workflows/   CI: анализ и тесты
 ```
 
@@ -89,8 +88,6 @@ flutter test
 - **Сервер**: [`server/`](server/README.md). Ключ APNs (`.p8`) и сервисный аккаунт Firebase нужны
   только серверу и в репозиторий не попадают.
 - Тестовая отправка без сервера: `tool/send_test_push.sh` (iOS) и `tool/send_test_fcm.sh` (Android).
-
-Устройство и план развития — в [docs/PUSH_NOTIFICATIONS_PLAN.md](docs/PUSH_NOTIFICATIONS_PLAN.md).
 
 ## Релизные сборки
 

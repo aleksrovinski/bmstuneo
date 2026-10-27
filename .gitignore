@@ -88,5 +88,6 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
-# --- CI configs kept outside the repository ---
+# --- Local-only files kept outside the repository ---
 codemagic.yaml
+docs/PUSH_NOTIFICATIONS_PLAN.md
