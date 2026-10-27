@@ -37,7 +37,9 @@ class FvProvider with ChangeNotifier {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString('$_cacheFvPrefix$stageUuid', jsonEncode(data.toJson()));
       await prefs.setString('$_cacheFvTimePrefix$stageUuid', DateTime.now().toIso8601String());
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('[FvProvider] Failed to cache PE data: $e');
+    }
   }
 
   Future<PhysicalCultureData?> _loadFvFromCache(String stageUuid) async {
@@ -47,7 +49,8 @@ class FvProvider with ChangeNotifier {
       if (raw == null || raw.isEmpty) return null;
       final decoded = jsonDecode(raw) as Map<String, dynamic>;
       return PhysicalCultureData.fromJson(decoded);
-    } catch (_) {
+    } catch (e) {
+      debugPrint('[FvProvider] Corrupted PE cache ignored: $e');
       return null;
     }
   }
@@ -57,7 +60,9 @@ class FvProvider with ChangeNotifier {
       final prefs = await SharedPreferences.getInstance();
       final raw = prefs.getString('$_cacheFvTimePrefix$stageUuid');
       if (raw != null) return DateTime.tryParse(raw);
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('[FvProvider] Failed to read PE cache time: $e');
+    }
     return null;
   }
 

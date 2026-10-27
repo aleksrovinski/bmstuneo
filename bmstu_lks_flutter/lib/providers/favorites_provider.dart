@@ -93,7 +93,9 @@ class FavoritesProvider with ChangeNotifier {
           .map((g) => {'title': g.title, 'uuid': g.uuid})
           .toList();
       await prefs.setString(_keyFavoriteGroups, jsonEncode(list));
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('[FavoritesProvider] Failed to save favorite groups: $e');
+    }
   }
 
   Future<void> _saveFavoriteTeachers() async {
@@ -103,6 +105,8 @@ class FavoritesProvider with ChangeNotifier {
           .map((t) => {'title': t.title, 'uuid': t.uuid})
           .toList();
       await prefs.setString(_keyFavoriteTeachers, jsonEncode(list));
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('[FavoritesProvider] Failed to save favorite teachers: $e');
+    }
   }
 }

@@ -208,78 +208,11 @@ class DisciplineCard extends StatelessWidget {
 
           const Divider(height: 1, thickness: 0.5),
 
-          // 2. Horizontal Semester Week Timeline (Weeks 1 to 17)
-          Container(
-            height: 84,
-            padding: const EdgeInsets.symmetric(vertical: 8),
-            child: ListView.builder(
-              scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.symmetric(horizontal: 12),
-              itemCount: 17,
-              itemBuilder: (context, idx) {
-                final week = idx + 1;
-                final isCurrent = week == currentWeek;
-                final weekList = weekEvents[week] ?? [];
-
-                return Container(
-                  width: 64,
-                  margin: const EdgeInsets.symmetric(horizontal: 3),
-                  padding: const EdgeInsets.all(4),
-                  decoration: BoxDecoration(
-                    color: isCurrent
-                        ? theme.colorScheme.primary.withValues(alpha: 0.15)
-                        : theme.colorScheme.surfaceContainerLow,
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(
-                      color: isCurrent
-                          ? theme.colorScheme.primary
-                          : theme.colorScheme.outlineVariant
-                              .withValues(alpha: 0.5),
-                      width: isCurrent ? 1.5 : 1,
-                    ),
-                  ),
-                  child: Column(
-                    children: [
-                      // Week Label
-                      Text(
-                        '$week н.',
-                        style: TextStyle(
-                          fontSize: 10,
-                          fontWeight:
-                              isCurrent ? FontWeight.w800 : FontWeight.w600,
-                          color: isCurrent
-                              ? theme.colorScheme.primary
-                              : theme.colorScheme.onSurfaceVariant,
-                        ),
-                      ),
-                      const SizedBox(height: 3),
-
-                      // Event chips in this week with icons
-                      Expanded(
-                        child: weekList.isEmpty
-                            ? Center(
-                                child: Container(
-                                  width: 4,
-                                  height: 4,
-                                  decoration: BoxDecoration(
-                                    color: theme.colorScheme.outlineVariant,
-                                    shape: BoxShape.circle,
-                                  ),
-                                ),
-                              )
-                            : SingleChildScrollView(
-                                child: Column(
-                                  children: weekList.map((e) {
-                                    return _buildEventMiniChip(context, e);
-                                  }).toList(),
-                                ),
-                              ),
-                      ),
-                    ],
-                  ),
-                );
-              },
-            ),
+          // 2. Horizontal Semester Week Timeline (Weeks 1 to 17), centered on the current week
+          WeekTimeline(
+            currentWeek: currentWeek,
+            weekBuilder: (context, week, isCurrent) =>
+                _buildWeekCell(context, week, isCurrent, weekEvents[week] ?? const []),
           ),
 
           // 3. Informative Event Chips Row
@@ -295,6 +228,61 @@ class DisciplineCard extends StatelessWidget {
               ),
             ),
           ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildWeekCell(BuildContext context, int week, bool isCurrent, List<ControlEvent> weekList) {
+    final theme = Theme.of(context);
+    return Container(
+      width: WeekTimeline.cellWidth,
+      margin: const EdgeInsets.symmetric(horizontal: WeekTimeline.cellMargin),
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        color: isCurrent
+            ? theme.colorScheme.primary.withValues(alpha: 0.15)
+            : theme.colorScheme.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(
+          color: isCurrent
+              ? theme.colorScheme.primary
+              : theme.colorScheme.outlineVariant.withValues(alpha: 0.5),
+          width: isCurrent ? 1.5 : 1,
+        ),
+      ),
+      child: Column(
+        children: [
+          // Week Label
+          Text(
+            '$week н.',
+            style: TextStyle(
+              fontSize: 10,
+              fontWeight: isCurrent ? FontWeight.w800 : FontWeight.w600,
+              color: isCurrent ? theme.colorScheme.primary : theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+          const SizedBox(height: 3),
+
+          // Event chips in this week with icons
+          Expanded(
+            child: weekList.isEmpty
+                ? Center(
+                    child: Container(
+                      width: 4,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: theme.colorScheme.outlineVariant,
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                  )
+                : SingleChildScrollView(
+                    child: Column(
+                      children: weekList.map((e) => _buildEventMiniChip(context, e)).toList(),
+                    ),
+                  ),
+          ),
         ],
       ),
     );
@@ -367,6 +355,13 @@ class DisciplineCard extends StatelessWidget {
                 color: theme.colorScheme.onSurface,
               ),
             ),
+            if (e.manualMark != null) ...[
+              const SizedBox(width: 3),
+              Tooltip(
+                message: 'Отмечено вами',
+                child: Icon(Icons.edit_rounded, size: 11, color: theme.colorScheme.onSurfaceVariant),
+              ),
+            ],
             const SizedBox(width: 6),
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
@@ -394,6 +389,83 @@ class DisciplineCard extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// Horizontal strip of semester weeks that opens centered on [currentWeek].
+class WeekTimeline extends StatefulWidget {
+  static const int weekCount = 17;
+  static const double cellWidth = 64;
+  static const double cellMargin = 3;
+  static const double sidePadding = 12;
+
+  final int currentWeek;
+  final Widget Function(BuildContext context, int week, bool isCurrent) weekBuilder;
+
+  const WeekTimeline({super.key, required this.currentWeek, required this.weekBuilder});
+
+  /// Scroll offset that puts [week] in the middle of a [viewport]-wide strip,
+  /// clamped so the first and last weeks stay at the edges.
+  static double centerOffset(int week, double viewport, double maxExtent) {
+    const slot = cellWidth + 2 * cellMargin;
+    final weekCenter = sidePadding + (week - 1) * slot + slot / 2;
+    return (weekCenter - viewport / 2).clamp(0.0, maxExtent);
+  }
+
+  @override
+  State<WeekTimeline> createState() => _WeekTimelineState();
+}
+
+class _WeekTimelineState extends State<WeekTimeline> {
+  final ScrollController _controller = ScrollController();
+
+  @override
+  void initState() {
+    super.initState();
+    _centerAfterLayout();
+  }
+
+  @override
+  void didUpdateWidget(WeekTimeline oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.currentWeek != widget.currentWeek) _centerAfterLayout();
+  }
+
+  // The viewport width is only known after layout
+  void _centerAfterLayout() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_controller.hasClients) return;
+      final position = _controller.position;
+      _controller.jumpTo(WeekTimeline.centerOffset(
+        widget.currentWeek.clamp(1, WeekTimeline.weekCount),
+        position.viewportDimension,
+        position.maxScrollExtent,
+      ));
+    });
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 84,
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: ListView.builder(
+        controller: _controller,
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: WeekTimeline.sidePadding),
+        itemCount: WeekTimeline.weekCount,
+        itemBuilder: (context, idx) {
+          final week = idx + 1;
+          return widget.weekBuilder(context, week, week == widget.currentWeek);
+        },
       ),
     );
   }

@@ -1,10 +1,14 @@
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../providers/schedule_provider.dart';
 
 class WidgetSyncService {
   static const MethodChannel _channel = MethodChannel('ru.bmstu.neo/widget');
+  // Android reads this snapshot too (ScheduleWidgetProvider.latestScheduleJson): a background
+  // sync runs without MainActivity, so the channel below doesn't exist there
+  static const backgroundSnapshotKey = 'widget_schedule_json_v1';
 
   /// Updates the Android Home Screen Widget with the latest schedule data.
   /// Automatically switches between today's pairs and tomorrow's pairs
@@ -52,6 +56,8 @@ class WidgetSyncService {
       }
 
       final payload = {
+        // Lets the widget pick the newest of the app's and the background sync's snapshots
+        'generatedAt': now.millisecondsSinceEpoch,
         'groupTitle': group,
         'dayTitle': targetDayTitle,
         'isTomorrow': isTomorrow,
@@ -60,6 +66,7 @@ class WidgetSyncService {
         'statusSubline': liveStatus.subline,
         'lessons': currentLessons.map((l) => {
           'time': '${l.startTime} - ${l.endTime}',
+          'pairNumber': l.time,
           'startTime': l.startTime,
           'endTime': l.endTime,
           'disciplineTitle': l.disciplineTitle,
@@ -73,7 +80,15 @@ class WidgetSyncService {
       };
 
       final jsonString = jsonEncode(payload);
-      await _channel.invokeMethod('updateWidget', {'scheduleJson': jsonString});
+      if (defaultTargetPlatform == TargetPlatform.android) {
+        await (await SharedPreferences.getInstance()).setString(backgroundSnapshotKey, jsonString);
+      }
+      try {
+        await _channel.invokeMethod('updateWidget', {'scheduleJson': jsonString});
+      } on MissingPluginException {
+        // Background engine: the snapshot above is drawn by the native refresh after the sync
+        return;
+      }
       
       // Also sync Live Activity Notification
       final notifEnabled = await isLiveNotificationEnabled();

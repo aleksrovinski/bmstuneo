@@ -69,7 +69,9 @@ class ScheduleProvider with ChangeNotifier {
       final jsonList = lessons.map((l) => l.toJson()).toList();
       await prefs.setString('$_cachePrefix$groupUuid', jsonEncode(jsonList));
       await prefs.setString('$_cacheTimePrefix$groupUuid', DateTime.now().toIso8601String());
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('[ScheduleProvider] Failed to cache schedule: $e');
+    }
   }
 
   Future<List<ScheduleLesson>?> _loadScheduleFromCache(String groupUuid) async {
@@ -79,7 +81,8 @@ class ScheduleProvider with ChangeNotifier {
       if (raw == null || raw.isEmpty) return null;
       final decoded = jsonDecode(raw) as List;
       return decoded.map((e) => ScheduleLesson.fromJson(e as Map<String, dynamic>)).toList();
-    } catch (_) {
+    } catch (e) {
+      debugPrint('[ScheduleProvider] Corrupted schedule cache ignored: $e');
       return null;
     }
   }
@@ -89,7 +92,9 @@ class ScheduleProvider with ChangeNotifier {
       final prefs = await SharedPreferences.getInstance();
       final raw = prefs.getString('$_cacheTimePrefix$groupUuid');
       if (raw != null) return DateTime.tryParse(raw);
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('[ScheduleProvider] Failed to read schedule cache time: $e');
+    }
     return null;
   }
 
@@ -104,7 +109,9 @@ class ScheduleProvider with ChangeNotifier {
             .toList();
         notifyListeners();
       }
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('[ScheduleProvider] Failed to load custom lessons: $e');
+    }
   }
 
   Future<void> addCustomLesson(ScheduleLesson lesson) async {
@@ -126,7 +133,9 @@ class ScheduleProvider with ChangeNotifier {
       final prefs = await SharedPreferences.getInstance();
       final listJson = _customLessons.map((l) => l.toJson()).toList();
       await prefs.setString(_customLessonsKey, jsonEncode(listJson));
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('[ScheduleProvider] Failed to save custom lessons: $e');
+    }
   }
 
   Future<void> _saveCachedCurrentWeek(CurrentWeek week) async {
@@ -134,7 +143,9 @@ class ScheduleProvider with ChangeNotifier {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString(_cachedCurrentWeekKey, jsonEncode(week.toJson()));
       await prefs.setString(_cachedCurrentWeekTimeKey, DateTime.now().toIso8601String());
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('[ScheduleProvider] Failed to cache current week: $e');
+    }
   }
 
   Future<void> _restoreCachedWeek() async {

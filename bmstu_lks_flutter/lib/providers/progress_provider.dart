@@ -68,7 +68,21 @@ enum ScholarshipStatus {
 class ProgressProvider with ChangeNotifier {
   final BmstuApiService apiService;
 
-  List<DisciplineProgress> _disciplines = [];
+  static const manualMarksKey = 'manual_event_marks_v1';
+
+  // Disciplines as LKS returned them (this is what gets cached); every reader
+  // goes through [_disciplines], which overlays the student's manual marks.
+  List<DisciplineProgress> _lksDisciplines = [];
+  List<DisciplineProgress>? _markedDisciplines;
+  Map<String, ManualMark> _manualMarks = {};
+
+  List<DisciplineProgress> get _disciplines =>
+      _markedDisciplines ??= _applyManualMarks(_lksDisciplines, _manualMarks);
+  set _disciplines(List<DisciplineProgress> value) {
+    _lksDisciplines = value;
+    _markedDisciplines = null;
+  }
+
   bool _isLoading = false;
   String? _errorMessage;
   SyncStatus? _syncStatus;
@@ -83,7 +97,49 @@ class ProgressProvider with ChangeNotifier {
   ProgressProvider({
     required this.apiService,
     this.onSilentRelogin,
-  });
+  }) {
+    _loadManualMarks();
+  }
+
+  static List<DisciplineProgress> _applyManualMarks(
+    List<DisciplineProgress> disciplines,
+    Map<String, ManualMark> marks,
+  ) =>
+      marks.isEmpty ? disciplines : [for (final d in disciplines) d.withManualMarks(marks)];
+
+  ManualMark? manualMarkFor(ControlEvent e) => _manualMarks[e.markKey];
+
+  /// Overrides the LKS status of [e] on this device; null returns it to LKS.
+  Future<void> setManualMark(ControlEvent e, ManualMark? mark) async {
+    if (!e.canMarkManually) return;
+    _manualMarks = {..._manualMarks};
+    if (mark == null) {
+      _manualMarks.remove(e.markKey);
+    } else {
+      _manualMarks[e.markKey] = mark;
+    }
+    _markedDisciplines = null;
+    notifyListeners();
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(manualMarksKey, ManualMark.encodeAll(_manualMarks));
+    } catch (e) {
+      debugPrint('[ProgressProvider] Failed to save manual marks: $e');
+    }
+  }
+
+  Future<void> _loadManualMarks() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(manualMarksKey);
+      if (raw == null) return;
+      _manualMarks = ManualMark.decodeAll(raw);
+      _markedDisciplines = null;
+      notifyListeners();
+    } catch (e) {
+      debugPrint('[ProgressProvider] Failed to load manual marks: $e');
+    }
+  }
 
   List<DisciplineProgress> get disciplines => _disciplines;
   bool get isLoading => _isLoading;
@@ -94,6 +150,12 @@ class ProgressProvider with ChangeNotifier {
   ProgressStatusFilter get statusFilter => _statusFilter;
   DeadlineTypeFilter get typeFilter => _typeFilter;
   String get searchQuery => _searchQuery;
+
+  @visibleForTesting
+  void setDisciplinesForTest(List<DisciplineProgress> disciplines) {
+    _disciplines = disciplines;
+    notifyListeners();
+  }
 
   double get gpa {
     final graded = _disciplines.map((d) => d.estimatedGrade).whereType<int>().toList();
@@ -144,26 +206,30 @@ class ProgressProvider with ChangeNotifier {
     notifyListeners();
   }
 
-  static const _cacheProgressPrefix = 'cached_progress_v1_';
-  static const _cacheProgressTimePrefix = 'cached_progress_time_v1_';
+  // Shared with BackgroundSync, which refreshes the same cache while the app is closed
+  static const cacheProgressPrefix = 'cached_progress_v1_';
+  static const cacheProgressTimePrefix = 'cached_progress_time_v1_';
 
   Future<void> _saveProgressToCache(String stageUuid, List<DisciplineProgress> disciplines) async {
     try {
       final prefs = await SharedPreferences.getInstance();
       final listJson = disciplines.map((d) => d.toJson()).toList();
-      await prefs.setString('$_cacheProgressPrefix$stageUuid', jsonEncode(listJson));
-      await prefs.setString('$_cacheProgressTimePrefix$stageUuid', DateTime.now().toIso8601String());
-    } catch (_) {}
+      await prefs.setString('$cacheProgressPrefix$stageUuid', jsonEncode(listJson));
+      await prefs.setString('$cacheProgressTimePrefix$stageUuid', DateTime.now().toIso8601String());
+    } catch (e) {
+      debugPrint('[ProgressProvider] Failed to cache progress: $e');
+    }
   }
 
   Future<List<DisciplineProgress>?> _loadProgressFromCache(String stageUuid) async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      final raw = prefs.getString('$_cacheProgressPrefix$stageUuid');
+      final raw = prefs.getString('$cacheProgressPrefix$stageUuid');
       if (raw == null || raw.isEmpty) return null;
       final decoded = jsonDecode(raw) as List;
       return decoded.map((e) => DisciplineProgress.fromJson(e as Map<String, dynamic>)).toList();
-    } catch (_) {
+    } catch (e) {
+      debugPrint('[ProgressProvider] Corrupted progress cache ignored: $e');
       return null;
     }
   }
@@ -171,9 +237,11 @@ class ProgressProvider with ChangeNotifier {
   Future<DateTime?> _loadCacheTimestamp(String stageUuid) async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      final raw = prefs.getString('$_cacheProgressTimePrefix$stageUuid');
+      final raw = prefs.getString('$cacheProgressTimePrefix$stageUuid');
       if (raw != null) return DateTime.tryParse(raw);
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('[ProgressProvider] Failed to read progress cache time: $e');
+    }
     return null;
   }
 

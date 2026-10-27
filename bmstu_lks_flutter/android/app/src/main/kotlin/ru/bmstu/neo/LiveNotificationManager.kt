@@ -8,6 +8,7 @@ import android.content.Context
 import android.content.Intent
 import android.os.Build
 import androidx.core.app.NotificationCompat
+import androidx.core.graphics.drawable.IconCompat
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.Calendar
@@ -80,7 +81,7 @@ object LiveNotificationManager {
     fun updateFromPrefs(context: Context) {
         val prefs = context.getSharedPreferences(ScheduleWidgetProvider.PREFS_NAME, Context.MODE_PRIVATE)
         val enabled = prefs.getBoolean(KEY_NOTIFICATION_ENABLED, true)
-        val scheduleJson = prefs.getString(ScheduleWidgetProvider.KEY_SCHEDULE_JSON, null)
+        val scheduleJson = ScheduleWidgetProvider.latestScheduleJson(context)
         updateNotification(context, enabled, scheduleJson)
     }
 
@@ -110,7 +111,7 @@ object LiveNotificationManager {
             val lessonList = mutableListOf<LessonSlot>()
             for (i in 0 until lessons.length()) {
                 val l = lessons.optJSONObject(i) ?: continue
-                val time = l.optInt("time", i + 1)
+                val time = l.optInt("pairNumber", 0)
                 val startTime = l.optString("startTime", "")
                 val endTime = l.optString("endTime", "")
                 val title = l.optString("disciplineTitle", "")
@@ -152,68 +153,6 @@ object LiveNotificationManager {
                 }
             }
 
-            val notificationTitle: String
-            val notificationText: String
-            val bigTextBuilder = StringBuilder()
-
-            if (currentLesson != null) {
-                val pairLabel = if (currentLesson.time > 0) "${currentLesson.time} пара" else "Занятие"
-                val typePart = if (currentLesson.type.isNotEmpty()) " (${currentLesson.type})" else ""
-                val currentRoom = if (currentLesson.room.isNotEmpty() && currentLesson.room != "—") "📍 Ауд. ${currentLesson.room}" else "📍 Корпус МГТУ"
-
-                notificationTitle = "$currentRoom • $pairLabel: ${currentLesson.title}$typePart"
-
-                val teacherPart = if (currentLesson.teacher.isNotEmpty() && currentLesson.teacher != "Кафедра") "👤 ${currentLesson.teacher}" else ""
-                val nextPart = if (nextLesson != null) {
-                    val nextLabel = if (nextLesson.time > 0) "${nextLesson.time} пара" else "след. пара"
-                    val nextRoomPart = if (nextLesson.room.isNotEmpty() && nextLesson.room != "—") " (ауд. ${nextLesson.room})" else ""
-                    "Далее: $nextLabel в ${nextLesson.startTime}$nextRoomPart"
-                } else {
-                    "Последняя пара 🎉"
-                }
-
-                notificationText = listOf(teacherPart, nextPart).filter { it.isNotEmpty() }.joinToString(" • ")
-
-                bigTextBuilder.append("📍 Где: ${if (currentLesson.room.isNotEmpty() && currentLesson.room != "—") "Ауд. ${currentLesson.room}" else "МГТУ им. Н.Э. Баумана"}\n")
-                bigTextBuilder.append("📖 $pairLabel (${currentLesson.startTime}–${currentLesson.endTime}): ${currentLesson.title}$typePart\n")
-                if (currentLesson.teacher.isNotEmpty() && currentLesson.teacher != "Кафедра") {
-                    bigTextBuilder.append("👤 Преподаватель: ${currentLesson.teacher}\n")
-                }
-
-                if (nextLesson != null) {
-                    val nextLabel = if (nextLesson.time > 0) "${nextLesson.time} пара" else "следующее занятие"
-                    val nextType = if (nextLesson.type.isNotEmpty()) " (${nextLesson.type})" else ""
-                    val nextRoom = if (nextLesson.room.isNotEmpty() && nextLesson.room != "—") " • ауд. ${nextLesson.room}" else ""
-                    bigTextBuilder.append("\n➡️ Далее в ${nextLesson.startTime}: $nextLabel — ${nextLesson.title}$nextType$nextRoom")
-                    if (nextLesson.teacher.isNotEmpty() && nextLesson.teacher != "Кафедра") {
-                        bigTextBuilder.append("\n👤 ${nextLesson.teacher}")
-                    }
-                } else {
-                    bigTextBuilder.append("\n🎉 Это последняя пара на сегодня!")
-                }
-            } else if (nextLesson != null) {
-                val isBreak = currentMinutes >= firstLesson.startMin
-                val nextLabel = if (nextLesson.time > 0) "${nextLesson.time} пара" else "Занятие"
-                val typePart = if (nextLesson.type.isNotEmpty()) " (${nextLesson.type})" else ""
-                val nextRoom = if (nextLesson.room.isNotEmpty() && nextLesson.room != "—") "📍 Ауд. ${nextLesson.room}" else "📍 Корпус МГТУ"
-
-                notificationTitle = "$nextRoom • $nextLabel: ${nextLesson.title}$typePart"
-
-                val subStatus = if (isBreak) "Перемена" else "Пары сегодня"
-                val teacherPart = if (nextLesson.teacher.isNotEmpty() && nextLesson.teacher != "Кафедра") "👤 ${nextLesson.teacher}" else ""
-                notificationText = listOf("$subStatus (начало в ${nextLesson.startTime})", teacherPart).filter { it.isNotEmpty() }.joinToString(" • ")
-
-                bigTextBuilder.append("📍 Где: ${if (nextLesson.room.isNotEmpty() && nextLesson.room != "—") "Ауд. ${nextLesson.room}" else "МГТУ им. Н.Э. Баумана"}\n")
-                bigTextBuilder.append("📖 $nextLabel (начало в ${nextLesson.startTime}): ${nextLesson.title}$typePart\n")
-                if (nextLesson.teacher.isNotEmpty() && nextLesson.teacher != "Кафедра") {
-                    bigTextBuilder.append("👤 Преподаватель: ${nextLesson.teacher}\n")
-                }
-                bigTextBuilder.append("⏰ Время занятия: ${nextLesson.startTime}–${nextLesson.endTime}")
-            } else {
-                cancelNotification(context)
-                return
-            }
-
             val appIntent = Intent(context, MainActivity::class.java).apply {
                 flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
             }
@@ -224,65 +163,67 @@ object LiveNotificationManager {
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
             )
 
-            // Setup live chronometer target time (countdown to end of pair or to start of next pair)
-            val countdownTargetCal = Calendar.getInstance().apply {
-                if (currentLesson != null) {
-                    set(Calendar.HOUR_OF_DAY, currentLesson.endMin / 60)
-                    set(Calendar.MINUTE, currentLesson.endMin % 60)
-                    set(Calendar.SECOND, 0)
-                } else if (nextLesson != null) {
-                    set(Calendar.HOUR_OF_DAY, nextLesson.startMin / 60)
-                    set(Calendar.MINUTE, nextLesson.startMin % 60)
-                    set(Calendar.SECOND, 0)
-                }
-            }
-
             val builder = NotificationCompat.Builder(context, CHANNEL_ID)
-                .setSmallIcon(R.mipmap.ic_launcher)
-                .setContentTitle(notificationTitle)
-                .setContentText(notificationText)
-                .setStyle(NotificationCompat.BigTextStyle().bigText(bigTextBuilder.toString()))
+                .setSmallIcon(R.drawable.ic_notif_school)
                 .setContentIntent(pendingIntent)
-                .setOngoing(true) // Promoted Live Update ongoing event
+                .setOngoing(true)
                 .setOnlyAlertOnce(true)
-                .setSilent(true) // Never beep or vibrate during live chronometer ticks
+                .setSilent(true) // Never beep or vibrate on the per-minute refreshes
                 .setPriority(NotificationCompat.PRIORITY_HIGH)
                 .setCategory(NotificationCompat.CATEGORY_STATUS)
                 .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
-                .setColor(0xFF0070F3.toInt()) // BMSTU Blue accent
-                .setShowWhen(true)
-                .setWhen(countdownTargetCal.timeInMillis)
-                .setUsesChronometer(true)
-                .setChronometerCountDown(true) // Live countdown ticking on lockscreen & status bar pill
-                .addAction(R.mipmap.ic_launcher, "Открыть расписание", pendingIntent)
+                .setColor(0xFF0070F3.toInt())
+                .setRequestPromotedOngoing(true) // Android 16 Live Update
+                .addAction(R.drawable.ic_notif_calendar, "Расписание", pendingIntent)
 
-            // Calculate live progress
+            // Header: pair number or break, plus a live countdown the system ticks by itself
+            // No bar before the first pair: there is nothing to measure yet
+            var progress: NotificationCompat.ProgressStyle? = null
+            val countdownTo: Int
             if (currentLesson != null) {
-                val totalDuration = (currentLesson.endMin - currentLesson.startMin).coerceAtLeast(1)
-                val elapsed = (currentMinutes - currentLesson.startMin).coerceIn(0, totalDuration)
-                builder.setProgress(totalDuration, elapsed, false)
-                builder.setSubText("Пара ${currentLesson.time} • Live Update")
+                countdownTo = currentLesson.endMin
+                builder.setContentTitle(currentLesson.title)
+                    .setContentText(details(currentLesson.room, currentLesson.type, currentLesson.teacher, nextLesson))
+                    .setSubText(pairLabel(currentLesson))
+                    .setShortCriticalText("до ${currentLesson.endTime}")
+                val total = (currentLesson.endMin - currentLesson.startMin).coerceAtLeast(1)
+                progress = NotificationCompat.ProgressStyle().setProgressSegments(listOf(NotificationCompat.ProgressStyle.Segment(total)))
+                    .setProgress((currentMinutes - currentLesson.startMin).coerceIn(0, total))
+                    .setProgressTrackerIcon(IconCompat.createWithResource(context, R.drawable.ic_notif_school))
+                    .setProgressEndIcon(IconCompat.createWithResource(context, R.drawable.ic_notif_flag))
             } else if (nextLesson != null) {
+                countdownTo = nextLesson.startMin
                 val isBreak = currentMinutes >= firstLesson.startMin
-                val prevEnd = lessonList.findLast { it.endMin <= currentMinutes }?.endMin ?: firstLesson.startMin
-                val breakDuration = (nextLesson.startMin - prevEnd).coerceAtLeast(1)
-                val elapsed = (currentMinutes - prevEnd).coerceIn(0, breakDuration)
-                builder.setProgress(breakDuration, elapsed, false)
-                builder.setSubText(if (isBreak) "Перемена • Live Update" else "До занятий • Live Update")
+                builder.setContentTitle(nextLesson.title)
+                    .setContentText(details(nextLesson.room, nextLesson.type, nextLesson.teacher, null, startsAt = nextLesson.startTime))
+                    .setSubText(if (isBreak) "Перемена" else "До начала пар")
+                    .setShortCriticalText("в ${nextLesson.startTime}")
+                if (isBreak) {
+                    val prevEnd = lessonList.lastOrNull { it.endMin <= currentMinutes }?.endMin ?: firstLesson.startMin
+                    val total = (nextLesson.startMin - prevEnd).coerceAtLeast(1)
+                    progress = NotificationCompat.ProgressStyle().setProgressSegments(listOf(NotificationCompat.ProgressStyle.Segment(total)))
+                        .setProgress((currentMinutes - prevEnd).coerceIn(0, total))
+                        .setProgressTrackerIcon(IconCompat.createWithResource(context, R.drawable.ic_notif_break))
+                        .setProgressEndIcon(IconCompat.createWithResource(context, R.drawable.ic_notif_school))
+                }
+            } else {
+                cancelNotification(context)
+                return
             }
-
-            // Android 16+ Promoted Ongoing Notification (Live Updates) request
-            builder.extras.putBoolean("android.requestPromotedOngoing", true)
-            try {
-                val setPromotedMethod = builder.javaClass.getMethod("setRequestPromotedOngoing", Boolean::class.javaPrimitiveType)
-                setPromotedMethod.invoke(builder, true)
-            } catch (e: Exception) {
-                // Compatibility mode: already added to extras Bundle
+            val countdownCal = Calendar.getInstance().apply {
+                set(Calendar.HOUR_OF_DAY, countdownTo / 60)
+                set(Calendar.MINUTE, countdownTo % 60)
+                set(Calendar.SECOND, 0)
+                set(Calendar.MILLISECOND, 0)
             }
+            builder.setShowWhen(true)
+                .setWhen(countdownCal.timeInMillis)
+                .setUsesChronometer(true)
+                .setChronometerCountDown(true)
+            progress?.let { builder.setStyle(it) }
 
-            val notification = builder.build()
             val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
-            notificationManager?.notify(NOTIFICATION_ID, notification)
+            notificationManager?.notify(NOTIFICATION_ID, builder.build())
 
             // Schedule next refresh at next pair boundary
             scheduleNextRefresh(context, lessonList, currentMinutes)
@@ -291,61 +232,70 @@ object LiveNotificationManager {
         }
     }
 
+    /**
+     * Wakes the device at the next pair start or end; in between, refreshes the progress bar
+     * once a minute without waking the device (it catches up as soon as the screen turns on).
+     */
     private fun scheduleNextRefresh(context: Context, lessonList: List<LessonSlot>, currentMinutes: Int) {
         try {
-            var nextTriggerMinutes: Int? = null
+            val boundary = lessonList
+                .flatMap { listOf(it.startMin, it.endMin) }
+                .filter { it > currentMinutes }
+                .minOrNull() ?: return
+            val dayStarted = currentMinutes >= lessonList.first().startMin
+            val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as? AlarmManager ?: return
+            val pendingIntent = PendingIntent.getBroadcast(
+                context,
+                ALARM_REQUEST_CODE,
+                Intent(context, LiveNotificationReceiver::class.java).apply { action = ALARM_ACTION },
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+            val exactAllowed = Build.VERSION.SDK_INT < Build.VERSION_CODES.S || alarmManager.canScheduleExactAlarms()
 
-            for (l in lessonList) {
-                if (l.startMin > currentMinutes) {
-                    if (nextTriggerMinutes == null || l.startMin < nextTriggerMinutes) {
-                        nextTriggerMinutes = l.startMin
-                    }
+            if (dayStarted && boundary - currentMinutes > 1) {
+                val tick = Calendar.getInstance().apply {
+                    add(Calendar.MINUTE, 1)
+                    set(Calendar.SECOND, 1)
+                    set(Calendar.MILLISECOND, 0)
+                }.timeInMillis
+                if (exactAllowed) {
+                    alarmManager.setExact(AlarmManager.RTC, tick, pendingIntent)
+                } else {
+                    alarmManager.setWindow(AlarmManager.RTC, tick, 30_000L, pendingIntent)
                 }
-                if (l.endMin > currentMinutes) {
-                    if (nextTriggerMinutes == null || l.endMin < nextTriggerMinutes) {
-                        nextTriggerMinutes = l.endMin
-                    }
-                }
+                return
             }
 
-            if (nextTriggerMinutes != null) {
-                val targetCal = Calendar.getInstance().apply {
-                    set(Calendar.HOUR_OF_DAY, nextTriggerMinutes / 60)
-                    set(Calendar.MINUTE, nextTriggerMinutes % 60)
-                    set(Calendar.SECOND, 2)
-                    set(Calendar.MILLISECOND, 0)
-                }
-
-                val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as? AlarmManager
-                val intent = Intent(context, LiveNotificationReceiver::class.java).apply {
-                    action = ALARM_ACTION
-                }
-                val pendingIntent = PendingIntent.getBroadcast(
-                    context,
-                    ALARM_REQUEST_CODE,
-                    intent,
-                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-                )
-
-                if (alarmManager != null) {
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                        alarmManager.setExactAndAllowWhileIdle(
-                            AlarmManager.RTC_WAKEUP,
-                            targetCal.timeInMillis,
-                            pendingIntent
-                        )
-                    } else {
-                        alarmManager.setExact(
-                            AlarmManager.RTC_WAKEUP,
-                            targetCal.timeInMillis,
-                            pendingIntent
-                        )
-                    }
-                }
+            val target = Calendar.getInstance().apply {
+                set(Calendar.HOUR_OF_DAY, boundary / 60)
+                set(Calendar.MINUTE, boundary % 60)
+                set(Calendar.SECOND, 2)
+                set(Calendar.MILLISECOND, 0)
+            }.timeInMillis
+            if (exactAllowed) {
+                alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, target, pendingIntent)
+            } else {
+                alarmManager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, target, pendingIntent)
             }
         } catch (e: Exception) {
             // Ignore
         }
+    }
+
+    private fun pairLabel(lesson: LessonSlot) = if (lesson.time > 0) "${lesson.time} пара" else "Занятие"
+
+    /** One line with what the title doesn't say: room, type, teacher, then the next pair. */
+    private fun details(room: String, type: String, teacher: String, next: LessonSlot?, startsAt: String? = null): String {
+        val parts = mutableListOf<String>()
+        if (startsAt != null) parts.add("с $startsAt")
+        if (room.isNotEmpty() && room != "—") parts.add("ауд. $room")
+        if (type.isNotEmpty()) parts.add(type.lowercase())
+        if (teacher.isNotEmpty() && teacher != "Кафедра") parts.add(teacher)
+        if (next != null) {
+            val nextRoom = if (next.room.isNotEmpty() && next.room != "—") ", ${next.room}" else ""
+            parts.add("далее в ${next.startTime}: ${next.title}$nextRoom")
+        }
+        return parts.joinToString(" · ")
     }
 
     private fun parseTimeToMinutes(timeStr: String): Int? {

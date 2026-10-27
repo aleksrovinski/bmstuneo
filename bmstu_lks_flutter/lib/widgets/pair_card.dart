@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+
 import '../models/schedule_lesson.dart';
 import 'teacher_details_sheet.dart';
 
@@ -7,12 +8,7 @@ class PairCard extends StatelessWidget {
   final bool isCurrent;
   final VoidCallback? onDelete;
 
-  const PairCard({
-    super.key,
-    required this.lesson,
-    this.isCurrent = false,
-    this.onDelete,
-  });
+  const PairCard({super.key, required this.lesson, this.isCurrent = false, this.onDelete});
 
   Color _getTypeColor(String type) {
     switch (type.toLowerCase()) {
@@ -44,257 +40,114 @@ class PairCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
+    final scheme = theme.colorScheme;
     final typeColor = _getTypeColor(lesson.actType);
+    final hasTeachers = lesson.teachers.isNotEmpty;
+    final meta = [lesson.audiencesFormatted, if (!lesson.isEveryWeek) lesson.weekTitle].join(' · ');
 
     return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
       decoration: BoxDecoration(
-        color: isCurrent
-            ? (isDark
-                ? theme.colorScheme.primaryContainer.withValues(alpha: 0.35)
-                : theme.colorScheme.primaryContainer.withValues(alpha: 0.45))
-            : (isDark
-                ? theme.colorScheme.surfaceContainer
-                : theme.colorScheme.surfaceContainerLow),
-        borderRadius: BorderRadius.circular(22),
-        border: Border.all(
-          color: isCurrent
-              ? theme.colorScheme.primary
-              : theme.colorScheme.outlineVariant.withValues(alpha: 0.7),
-          width: isCurrent ? 2.0 : 1.0,
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: isCurrent
-                ? theme.colorScheme.primary.withValues(alpha: 0.18)
-                : Colors.black.withValues(alpha: isDark ? 0.2 : 0.04),
-            blurRadius: 12,
-            offset: const Offset(0, 4),
-          ),
-        ],
+        color: isCurrent ? scheme.primaryContainer.withValues(alpha: 0.55) : scheme.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(18),
+        border: isCurrent ? Border.all(color: scheme.primary, width: 1.5) : null,
       ),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+      padding: const EdgeInsets.fromLTRB(12, 12, 8, 12),
+      child: IntrinsicHeight(
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // Header: Pair number, time, and type badge
-            Row(
-              children: [
-                // Pair badge
-                Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: isCurrent
-                        ? theme.colorScheme.primary
-                        : (isDark
-                            ? theme.colorScheme.surfaceContainerHigh
-                            : theme.colorScheme.surface),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Text(
-                    lesson.time > 0 ? '${lesson.time} пара' : 'Занятие',
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w700,
-                      color: isCurrent
-                          ? theme.colorScheme.onPrimary
-                          : theme.colorScheme.onSurfaceVariant,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                // Time
-                Text(
-                  '${lesson.startTime} — ${lesson.endTime}',
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                    color: theme.colorScheme.onSurfaceVariant,
-                  ),
-                ),
-                const Spacer(),
-                if (lesson.isCustom) ...[
-                  Container(
-                    margin: const EdgeInsets.only(right: 6),
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 7, vertical: 2.5),
-                    decoration: BoxDecoration(
-                      color: theme.colorScheme.tertiary
-                          .withValues(alpha: 0.15),
-                      borderRadius: BorderRadius.circular(6),
-                      border: Border.all(
-                        color: theme.colorScheme.tertiary
-                            .withValues(alpha: 0.4),
-                      ),
-                    ),
-                    child: Text(
-                      'Своя',
-                      style: TextStyle(
-                        fontSize: 10,
-                        fontWeight: FontWeight.w700,
-                        color: theme.colorScheme.tertiary,
-                      ),
-                    ),
-                  ),
-                ],
-                // Act Type Badge
-                Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: typeColor.withValues(alpha: 0.15),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Text(
-                    lesson.actTypeTitle,
+            // Time column: pair number, start and end
+            SizedBox(
+              width: 50,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    lesson.time > 0 ? '${lesson.time} пара' : 'Своя',
                     style: TextStyle(
                       fontSize: 11,
-                      fontWeight: FontWeight.w700,
-                      color: typeColor,
+                      fontWeight: FontWeight.w600,
+                      color: isCurrent ? scheme.primary : scheme.onSurfaceVariant,
                     ),
                   ),
-                ),
-                if (lesson.isCustom && onDelete != null) ...[
-                  const SizedBox(width: 4),
-                  InkWell(
-                    onTap: onDelete,
-                    borderRadius: BorderRadius.circular(8),
-                    child: Padding(
-                      padding: const EdgeInsets.all(4),
-                      child: Icon(
-                        Icons.delete_outline_rounded,
-                        size: 18,
-                        color: theme.colorScheme.error,
-                      ),
-                    ),
+                  const SizedBox(height: 2),
+                  Text(
+                    lesson.startTime,
+                    style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: scheme.onSurface),
                   ),
+                  Text(lesson.endTime, style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant)),
                 ],
-              ],
-            ),
-            const SizedBox(height: 12),
-
-            // Discipline Title
-            Text(
-              lesson.disciplineTitle,
-              style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w700,
-                color: theme.colorScheme.onSurface,
-                height: 1.25,
               ),
             ),
-            const SizedBox(height: 10),
-
-            // Audiences and Teachers row
-            Row(
-              children: [
-                // Audience with Building
-                Expanded(
-                  child: Row(
-                    children: [
-                      Icon(
-                        Icons.meeting_room_outlined,
-                        size: 16,
-                        color: theme.colorScheme.onSurfaceVariant,
+            // Lesson type as a colored rail
+            Container(
+              width: 3,
+              margin: const EdgeInsets.only(right: 12),
+              decoration: BoxDecoration(color: typeColor, borderRadius: BorderRadius.circular(2)),
+            ),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    lesson.disciplineTitle,
+                    style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: scheme.onSurface, height: 1.25),
+                  ),
+                  const SizedBox(height: 4),
+                  Text.rich(
+                    TextSpan(
+                      children: [
+                        TextSpan(
+                          text: lesson.actTypeTitle,
+                          style: TextStyle(color: typeColor, fontWeight: FontWeight.w700),
+                        ),
+                        TextSpan(text: ' · $meta'),
+                      ],
+                    ),
+                    style: TextStyle(fontSize: 12.5, color: scheme.onSurfaceVariant),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  if (hasTeachers) ...[
+                    const SizedBox(height: 2),
+                    InkWell(
+                      borderRadius: BorderRadius.circular(6),
+                      onTap: () => TeacherDetailsSheet.show(
+                        context,
+                        teachers: lesson.teachers,
+                        disciplineTitle: lesson.disciplineTitle,
+                        actTypeTitle: lesson.actTypeTitle,
+                        audiences: lesson.audiencesFormatted,
                       ),
-                      const SizedBox(width: 6),
-                      Flexible(
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 2),
                         child: Text(
-                          lesson.audiencesFormatted,
-                          style: TextStyle(
-                            fontSize: 13,
-                            color: theme.colorScheme.onSurfaceVariant,
-                          ),
+                          lesson.teachersFormatted,
+                          style: TextStyle(fontSize: 12.5, color: scheme.primary, fontWeight: FontWeight.w600),
+                          maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
                       ),
-                    ],
-                  ),
-                ),
-                // Teacher
-                Expanded(
-                  child: InkWell(
-                    borderRadius: BorderRadius.circular(8),
-                    onTap: lesson.teachers.isNotEmpty
-                        ? () {
-                            TeacherDetailsSheet.show(
-                              context,
-                              teachers: lesson.teachers,
-                              disciplineTitle: lesson.disciplineTitle,
-                              actTypeTitle: lesson.actTypeTitle,
-                              audiences: lesson.audiencesFormatted,
-                            );
-                          }
-                        : null,
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 2, horizontal: 2),
-                      child: Row(
-                        children: [
-                          Icon(
-                            Icons.person_outline_rounded,
-                            size: 16,
-                            color: lesson.teachers.isNotEmpty
-                                ? theme.colorScheme.primary
-                                : theme.colorScheme.onSurfaceVariant,
-                          ),
-                          const SizedBox(width: 6),
-                          Flexible(
-                            child: Text(
-                              lesson.teachersFormatted,
-                              style: TextStyle(
-                                fontSize: 13,
-                                color: lesson.teachers.isNotEmpty
-                                    ? theme.colorScheme.primary
-                                    : theme.colorScheme.onSurfaceVariant,
-                                decoration: lesson.teachers.isNotEmpty
-                                    ? TextDecoration.underline
-                                    : null,
-                                decorationStyle: TextDecorationStyle.dotted,
-                              ),
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                        ],
-                      ),
                     ),
-                  ),
-                ),
-              ],
+                  ],
+                  if (lesson.isStream && lesson.streamName != null)
+                    Text(
+                      'Поток: ${lesson.streamName}',
+                      style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                ],
+              ),
             ),
-
-            // Stream information or week badge
-            if (lesson.isStream && lesson.streamName != null) ...[
-              const SizedBox(height: 8),
-              Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                decoration: BoxDecoration(
-                  color: isDark ? Colors.white10 : Colors.black.withValues(alpha: 0.05),
-                  borderRadius: BorderRadius.circular(6),
-                ),
-                child: Text(
-                  'Поток: ${lesson.streamName}',
-                  style: TextStyle(
-                    fontSize: 11,
-                    color: theme.colorScheme.onSurfaceVariant,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
+            if (lesson.isCustom && onDelete != null)
+              IconButton(
+                onPressed: onDelete,
+                tooltip: 'Удалить своё занятие',
+                visualDensity: VisualDensity.compact,
+                icon: Icon(Icons.delete_outline_rounded, size: 20, color: scheme.error),
               ),
-            ] else if (!lesson.isEveryWeek) ...[
-              const SizedBox(height: 8),
-              Text(
-                'Периодичность: ${lesson.weekTitle}',
-                style: TextStyle(
-                  fontSize: 11,
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
-              ),
-            ],
           ],
         ),
       ),

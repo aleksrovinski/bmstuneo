@@ -62,41 +62,28 @@ class DeadlineCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
     final statusColor = _getStatusColor(context);
 
     return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-      padding: const EdgeInsets.all(14),
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      padding: const EdgeInsets.fromLTRB(10, 10, 12, 10),
       decoration: BoxDecoration(
-        color: isDark
-            ? theme.colorScheme.surfaceContainer
-            : theme.colorScheme.surfaceContainerLow,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(
-          color: status == DeadlineStatus.thisWeek
-              ? const Color(0xFFF59E0B).withValues(alpha: 0.6)
-              : theme.colorScheme.outlineVariant.withValues(alpha: 0.6),
-          width: status == DeadlineStatus.thisWeek ? 1.5 : 1.0,
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: isDark ? 0.2 : 0.03),
-            blurRadius: 10,
-            offset: const Offset(0, 3),
-          ),
-        ],
+        color: theme.colorScheme.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(18),
+        border: status == DeadlineStatus.thisWeek
+            ? Border.all(color: const Color(0xFFF59E0B).withValues(alpha: 0.6), width: 1.2)
+            : null,
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           // Event Type & Week Badge
           Container(
-            width: 48,
-            height: 48,
+            width: 42,
+            height: 42,
             decoration: BoxDecoration(
               color: statusColor.withValues(alpha: 0.12),
-              borderRadius: BorderRadius.circular(14),
+              borderRadius: BorderRadius.circular(12),
             ),
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
@@ -104,7 +91,7 @@ class DeadlineCard extends StatelessWidget {
                 Text(
                   event.type,
                   style: TextStyle(
-                    fontSize: 13,
+                    fontSize: 12.5,
                     fontWeight: FontWeight.w800,
                     color: statusColor,
                   ),
@@ -120,7 +107,7 @@ class DeadlineCard extends StatelessWidget {
               ],
             ),
           ),
-          const SizedBox(width: 14),
+          const SizedBox(width: 12),
 
           // Titles
           Expanded(
@@ -130,7 +117,7 @@ class DeadlineCard extends StatelessWidget {
                 Text(
                   event.title,
                   style: TextStyle(
-                    fontSize: 15,
+                    fontSize: 14,
                     fontWeight: FontWeight.w700,
                     color: theme.colorScheme.onSurface,
                   ),
@@ -152,7 +139,7 @@ class DeadlineCard extends StatelessWidget {
 
           // Status Badge
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
             decoration: BoxDecoration(
               color: statusColor.withValues(alpha: 0.12),
               borderRadius: BorderRadius.circular(20),

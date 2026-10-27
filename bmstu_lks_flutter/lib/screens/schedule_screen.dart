@@ -6,7 +6,6 @@ import '../providers/schedule_provider.dart';
 import '../widgets/pair_card.dart';
 import '../widgets/group_picker_sheet.dart';
 import '../widgets/add_custom_lesson_sheet.dart';
-import '../widgets/live_activity_settings_sheet.dart';
 import '../widgets/offline_status_banner.dart';
 import 'teacher_schedule_screen.dart';
 
@@ -98,101 +97,83 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
     }
   }
 
+  void _pickGroup(BuildContext context, String currentGroupTitle) {
+    final auth = context.read<AuthProvider>();
+    final sched = context.read<ScheduleProvider>();
+    GroupPickerSheet.show(context, currentGroupTitle: currentGroupTitle).then((group) {
+      if (group == null) return;
+      if (auth.isGuest) auth.setGuestGroup(group.title, group.uuid);
+      sched.switchGroup(group);
+    });
+  }
+
+  void _selectDay(ScheduleProvider sched, int index) {
+    sched.setSelectedDay(index + 1);
+    _dayPageController.animateToPage(index, duration: const Duration(milliseconds: 250), curve: Curves.easeInOut);
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
+    final scheme = theme.colorScheme;
 
     final auth = context.watch<AuthProvider>();
     final sched = context.watch<ScheduleProvider>();
 
-    final currentGroupTitle = sched.currentGroupTitle.isNotEmpty
-        ? sched.currentGroupTitle
-        : auth.currentGroupTitle;
+    final currentGroupTitle = sched.currentGroupTitle.isNotEmpty ? sched.currentGroupTitle : auth.currentGroupTitle;
 
-    final todayWeekday = DateTime.now().weekday;
-    final isCurrentNumerator = sched.currentWeek?.isNumerator ?? true;
+    final now = DateTime.now();
+    final week = sched.currentWeek;
+    final isCurrentNumerator = week?.isNumerator ?? true;
+    // Dates under the day names; on Sunday the strip already shows the coming week
+    final monday = DateTime(now.year, now.month, now.day)
+        .subtract(Duration(days: now.weekday - 1))
+        .add(Duration(days: now.weekday == DateTime.sunday ? 7 : 0));
 
     return Scaffold(
       appBar: AppBar(
-        titleSpacing: 20,
-        title: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Расписание занятий',
-              style: TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w600,
-                color: theme.colorScheme.primary,
-              ),
+        titleSpacing: 16,
+        title: InkWell(
+          onTap: () => _pickGroup(context, currentGroupTitle),
+          borderRadius: BorderRadius.circular(10),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(currentGroupTitle, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800)),
+                    Icon(Icons.expand_more_rounded, size: 22, color: scheme.onSurfaceVariant),
+                  ],
+                ),
+                Text(
+                  week == null
+                      ? 'Расписание'
+                      : '${week.weekNumber} неделя · ${isCurrentNumerator ? 'числитель' : 'знаменатель'}',
+                  style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w500, color: scheme.onSurfaceVariant),
+                ),
+              ],
             ),
-            InkWell(
-              onTap: () {
-                GroupPickerSheet.show(context,
-                        currentGroupTitle: currentGroupTitle)
-                    .then((group) {
-                  if (group != null) {
-                    if (auth.isGuest) {
-                      auth.setGuestGroup(group.title, group.uuid);
-                    }
-                    sched.switchGroup(group);
-                  }
-                });
-              },
-              borderRadius: BorderRadius.circular(8),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    currentGroupTitle,
-                    style: TextStyle(
-                      fontSize: 19,
-                      fontWeight: FontWeight.w800,
-                      color: theme.colorScheme.onSurface,
-                    ),
-                  ),
-                  const SizedBox(width: 4),
-                  Icon(
-                    Icons.arrow_drop_down_rounded,
-                    size: 24,
-                    color: theme.colorScheme.primary,
-                  ),
-                ],
-              ),
-            ),
-          ],
+          ),
         ),
         actions: [
           IconButton(
             icon: const Icon(Icons.person_search_rounded),
             tooltip: 'Расписание преподавателя',
-            onPressed: () {
-              Navigator.of(context).push(
-                MaterialPageRoute(
-                  builder: (_) => const TeacherScheduleScreen(),
-                ),
-              );
-            },
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const TeacherScheduleScreen()),
+            ),
           ),
-          IconButton(
-            icon: const Icon(Icons.notifications_active_rounded),
-            tooltip: 'Live Activity и виджет',
-            onPressed: () => LiveActivitySettingsSheet.show(context),
-          ),
-          IconButton(
-            icon: const Icon(Icons.refresh_rounded),
-            tooltip: 'Обновить расписание',
-            onPressed: sched.isLoading ? null : () => sched.refresh(),
-          ),
-          const SizedBox(width: 8),
+          const SizedBox(width: 4),
         ],
       ),
-      floatingActionButton: FloatingActionButton.extended(
+      floatingActionButton: FloatingActionButton(
         onPressed: () => _openAddCustomLesson(context),
-        icon: const Icon(Icons.add_rounded),
-        label: const Text('Своя пара'),
-        tooltip: 'Добавить своё занятие в расписание',
+        tooltip: 'Добавить своё занятие',
+        child: const Icon(Icons.add_rounded),
       ),
       body: Column(
         children: [
@@ -203,141 +184,73 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
               onRetry: sched.isLoading ? null : () => sched.refresh(),
             ),
 
-          // 1. Segmented Button for Week Filter
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            decoration: BoxDecoration(
-              color: theme.colorScheme.surface,
-              border: Border(
-                bottom: BorderSide(
-                  color: theme.colorScheme.outlineVariant,
-                ),
-              ),
-            ),
-            child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
+          // Week filter
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+            child: SizedBox(
+              width: double.infinity,
               child: SegmentedButton<String>(
-                segments: [
-                  ButtonSegment<String>(
-                    value: 'current',
-                    label: Text(
-                      'Текущая (${isCurrentNumerator ? "Числ." : "Знам."})',
-                      style: const TextStyle(
-                          fontSize: 12, fontWeight: FontWeight.w600),
-                    ),
-                    icon: const Icon(Icons.schedule_rounded, size: 16),
-                  ),
-                  const ButtonSegment<String>(
-                    value: 'numerator',
-                    label: Text(
-                      'Числитель',
-                      style:
-                          TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
-                    ),
-                  ),
-                  const ButtonSegment<String>(
-                    value: 'denominator',
-                    label: Text(
-                      'Знаменатель',
-                      style:
-                          TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
-                    ),
-                  ),
-                  const ButtonSegment<String>(
-                    value: 'all',
-                    label: Text(
-                      'Все недели',
-                      style:
-                          TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
-                    ),
-                  ),
+                showSelectedIcon: false,
+                style: SegmentedButton.styleFrom(
+                  visualDensity: VisualDensity.compact,
+                  textStyle: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
+                ),
+                segments: const [
+                  ButtonSegment(value: 'current', label: Text('Текущая', maxLines: 1, softWrap: false)),
+                  ButtonSegment(value: 'numerator', label: Text('Числ.')),
+                  ButtonSegment(value: 'denominator', label: Text('Знам.')),
+                  ButtonSegment(value: 'all', label: Text('Все')),
                 ],
                 selected: {sched.selectedWeekFilter},
-                onSelectionChanged: (newSelection) {
-                  sched.setSelectedWeekFilter(newSelection.first);
-                },
-                style: SegmentedButton.styleFrom(
-                  selectedBackgroundColor: theme.colorScheme.primary,
-                  selectedForegroundColor: theme.colorScheme.onPrimary,
-                  backgroundColor: isDark
-                      ? theme.colorScheme.surfaceContainer
-                      : theme.colorScheme.surfaceContainerLow,
-                  foregroundColor: theme.colorScheme.onSurface,
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(16)),
-                  side: BorderSide(
-                    color: theme.colorScheme.outlineVariant,
-                  ),
-                ),
+                onSelectionChanged: (selection) => sched.setSelectedWeekFilter(selection.first),
               ),
             ),
           ),
 
-          // 2. Day Selector Bar (ПН — СБ) with animated click and swipe sync
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-            color: isDark
-                ? theme.colorScheme.surfaceContainer
-                : theme.colorScheme.surfaceContainerLow,
+          // Day strip: weekday and date, today marked by color
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
             child: Row(
               children: List.generate(6, (index) {
                 final dayNum = index + 1;
                 final isSelected = sched.selectedDay == dayNum;
-                final isToday = todayWeekday == dayNum;
+                final date = monday.add(Duration(days: index));
+                final isToday = date.year == now.year && date.month == now.month && date.day == now.day;
+                final foreground = isSelected ? scheme.onPrimary : (isToday ? scheme.primary : scheme.onSurface);
 
                 return Expanded(
-                  child: GestureDetector(
-                    onTap: () {
-                      sched.setSelectedDay(dayNum);
-                      _dayPageController.animateToPage(
-                        index,
-                        duration: const Duration(milliseconds: 250),
-                        curve: Curves.easeInOut,
-                      );
-                    },
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(vertical: 8),
-                      margin: const EdgeInsets.symmetric(horizontal: 3),
-                      decoration: BoxDecoration(
-                        color: isSelected
-                            ? theme.colorScheme.primary
-                            : (isDark
-                                ? theme.colorScheme.surfaceContainerHigh
-                                : theme.colorScheme.surface),
-                        borderRadius: BorderRadius.circular(14),
-                        border: isToday && !isSelected
-                            ? Border.all(
-                                color: theme.colorScheme.primary, width: 1.5)
-                            : null,
-                      ),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(
-                            ScheduleScreen.daysShort[index],
-                            style: TextStyle(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w700,
-                              color: isSelected
-                                  ? theme.colorScheme.onPrimary
-                                  : theme.colorScheme.onSurface,
-                            ),
-                          ),
-                          if (isToday) ...[
-                            const SizedBox(height: 2),
-                            Container(
-                              width: 4,
-                              height: 4,
-                              decoration: BoxDecoration(
-                                color: isSelected
-                                    ? theme.colorScheme.onPrimary
-                                    : theme.colorScheme.primary,
-                                shape: BoxShape.circle,
+                  child: Semantics(
+                    button: true,
+                    selected: isSelected,
+                    label: '${ScheduleScreen.daysFull[index]}, ${date.day}${isToday ? ', сегодня' : ''}',
+                    excludeSemantics: true,
+                    child: GestureDetector(
+                      onTap: () => _selectDay(sched, index),
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 200),
+                        margin: const EdgeInsets.symmetric(horizontal: 3),
+                        padding: const EdgeInsets.symmetric(vertical: 6),
+                        decoration: BoxDecoration(
+                          color: isSelected ? scheme.primary : Colors.transparent,
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                        child: Column(
+                          children: [
+                            Text(
+                              ScheduleScreen.daysShort[index],
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                                color: isSelected ? scheme.onPrimary.withValues(alpha: 0.85) : scheme.onSurfaceVariant,
                               ),
                             ),
+                            const SizedBox(height: 2),
+                            Text(
+                              '${date.day}',
+                              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: foreground),
+                            ),
                           ],
-                        ],
+                        ),
                       ),
                     ),
                   ),
@@ -345,139 +258,53 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
               }),
             ),
           ),
+          const SizedBox(height: 4),
 
-          // 3. PageView supporting swipe gestures between days of the week (ПН -> СБ)
+          // Days, swipeable
           Expanded(
-            child: sched.isLoading
+            child: sched.isLoading && sched.allLessons.isEmpty
                 ? const Center(child: CircularProgressIndicator())
                 : PageView.builder(
                     controller: _dayPageController,
                     itemCount: 6,
-                    onPageChanged: (index) {
-                      sched.setSelectedDay(index + 1);
-                    },
+                    onPageChanged: (index) => sched.setSelectedDay(index + 1),
                     itemBuilder: (context, index) {
-                      final dayNum = index + 1;
-                      final dayLessons = sched.getLessonsForDay(
-                          dayNum, sched.selectedWeekFilter);
+                      final dayLessons = sched.getLessonsForDay(index + 1, sched.selectedWeekFilter);
 
                       return RefreshIndicator(
                         onRefresh: () => sched.refresh(),
-                        child: Column(
-                          children: [
-                            // Day Title Header & Pair Count
-                            Padding(
-                              padding:
-                                  const EdgeInsets.fromLTRB(20, 12, 20, 4),
-                              child: Row(
-                                mainAxisAlignment:
-                                    MainAxisAlignment.spaceBetween,
+                        child: dayLessons.isEmpty
+                            ? ListView(
+                                physics: const AlwaysScrollableScrollPhysics(),
+                                padding: const EdgeInsets.fromLTRB(32, 72, 32, 80),
                                 children: [
+                                  Icon(Icons.event_available_rounded, size: 48, color: scheme.onSurfaceVariant.withValues(alpha: 0.4)),
+                                  const SizedBox(height: 12),
                                   Text(
-                                    ScheduleScreen.daysFull[index],
-                                    style: TextStyle(
-                                      fontSize: 16,
-                                      fontWeight: FontWeight.w800,
-                                      color: theme.colorScheme.onSurface,
-                                    ),
+                                    'Пар нет',
+                                    textAlign: TextAlign.center,
+                                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: scheme.onSurface),
                                   ),
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(
-                                        horizontal: 8, vertical: 3),
-                                    decoration: BoxDecoration(
-                                      color: theme
-                                          .colorScheme.surfaceContainerHigh,
-                                      borderRadius: BorderRadius.circular(8),
-                                    ),
-                                    child: Text(
-                                      '${dayLessons.length} пар(ы)',
-                                      style: TextStyle(
-                                        fontSize: 12,
-                                        fontWeight: FontWeight.w600,
-                                        color:
-                                            theme.colorScheme.onSurfaceVariant,
-                                      ),
-                                    ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    'Проверьте фильтр недели или добавьте своё занятие кнопкой +',
+                                    textAlign: TextAlign.center,
+                                    style: TextStyle(fontSize: 13, color: scheme.onSurfaceVariant),
                                   ),
                                 ],
+                              )
+                            : ListView.builder(
+                                physics: const AlwaysScrollableScrollPhysics(),
+                                padding: const EdgeInsets.fromLTRB(0, 4, 0, 88),
+                                itemCount: dayLessons.length,
+                                itemBuilder: (context, lessonIdx) {
+                                  final lesson = dayLessons[lessonIdx];
+                                  return PairCard(
+                                    lesson: lesson,
+                                    onDelete: lesson.isCustom ? () => _confirmDeleteLesson(context, lesson) : null,
+                                  );
+                                },
                               ),
-                            ),
-
-                            // Lessons list or Empty state
-                            Expanded(
-                              child: dayLessons.isEmpty
-                                  ? ListView(
-                                      physics:
-                                          const AlwaysScrollableScrollPhysics(),
-                                      children: [
-                                        const SizedBox(height: 80),
-                                        Center(
-                                          child: Column(
-                                            mainAxisAlignment:
-                                                MainAxisAlignment.center,
-                                            children: [
-                                              Icon(
-                                                Icons.event_busy_rounded,
-                                                size: 56,
-                                                color: theme.colorScheme
-                                                    .onSurfaceVariant
-                                                    .withValues(alpha: 0.3),
-                                              ),
-                                              const SizedBox(height: 12),
-                                              Text(
-                                                'В этот день пар нет!',
-                                                style: TextStyle(
-                                                  fontSize: 16,
-                                                  fontWeight: FontWeight.w700,
-                                                  color: theme
-                                                      .colorScheme.onSurface,
-                                                ),
-                                              ),
-                                              const SizedBox(height: 4),
-                                              Text(
-                                                'Проверьте фильтр или добавьте своё занятие ✨',
-                                                style: TextStyle(
-                                                  fontSize: 13,
-                                                  color: theme.colorScheme
-                                                      .onSurfaceVariant,
-                                                ),
-                                              ),
-                                              const SizedBox(height: 16),
-                                              FilledButton.tonalIcon(
-                                                onPressed: () =>
-                                                    _openAddCustomLesson(
-                                                        context),
-                                                icon: const Icon(
-                                                    Icons.add_rounded,
-                                                    size: 18),
-                                                label: const Text(
-                                                    'Добавить своё занятие'),
-                                              ),
-                                            ],
-                                          ),
-                                        ),
-                                      ],
-                                    )
-                                  : ListView.builder(
-                                      physics:
-                                          const AlwaysScrollableScrollPhysics(),
-                                      padding: const EdgeInsets.fromLTRB(
-                                          0, 8, 0, 80),
-                                      itemCount: dayLessons.length,
-                                      itemBuilder: (context, lessonIdx) {
-                                        final lesson = dayLessons[lessonIdx];
-                                        return PairCard(
-                                          lesson: lesson,
-                                          onDelete: lesson.isCustom
-                                              ? () => _confirmDeleteLesson(
-                                                  context, lesson)
-                                              : null,
-                                        );
-                                      },
-                                    ),
-                            ),
-                          ],
-                        ),
                       );
                     },
                   ),

@@ -144,12 +144,31 @@ void main() {
         disciplineTitle: 'ФКиС',
         controlIndex: 1,
       );
-      expect(module.statusTitle, 'Зачтен (6 б.)');
-      expect(module.isSubmitted, isTrue);
+      // 6 points with a pass threshold of 36 is a shortfall, not a passed module
+      expect(module.isBelowThreshold, isTrue);
+      expect(module.statusTitle, 'Недобор (6 из 60 б., порог 36)');
+      expect(module.shortBadgeText, 'Недобор');
+      expect(module.isSubmitted, isFalse);
+      expect(module.isMissed, isTrue);
       expect(module.value, '6');
       expect(module.points!['point_all'], '60');
-      expect(module.statusIcon, Icons.check_circle_rounded);
-      expect(module.statusColor, const Color(0xFF10B981));
+      expect(module.statusIcon, Icons.cancel_rounded);
+      expect(module.statusColor, const Color(0xFFEF4444));
+
+      final passedModule = ControlEvent(
+        type: 'М',
+        title: 'Модуль 2',
+        week: 16,
+        value: '45',
+        points: {'point_3': '36', 'point_4': '42', 'point_5': '51', 'point_all': '60'},
+        disciplineTitle: 'ФКиС',
+        controlIndex: 2,
+      );
+      expect(passedModule.isBelowThreshold, isFalse);
+      expect(passedModule.statusTitle, 'Зачтен (45 из 60 б.)');
+      expect(passedModule.isSubmitted, isTrue);
+      expect(passedModule.statusIcon, Icons.check_circle_rounded);
+      expect(passedModule.statusColor, const Color(0xFF10B981));
     });
 
     test('DisciplineProgress separates controls, labs and seminars', () {

@@ -166,6 +166,77 @@ void main() {
     expect(auth.errorMessage, 'Нет подключения к серверу МГТУ. Проверьте интернет');
   });
 
+  group('Login with a session that is still alive', () {
+    ResponseBody profileApi(RequestOptions options) {
+      final path = options.uri.path;
+      if (path.endsWith('/person')) {
+        return _json({'data': {'firstName': 'Иван', 'lastName': 'Тестов', 'uuid': 'p-1'}}, 200);
+      }
+      if (path.endsWith('/student')) {
+        return _json({
+          'data': {
+            'stages': [
+              {'uuid': 'stage-1', 'group': {'title': 'ИУ7-43Б', 'uuid': 'group-1', 'semester': 4}},
+            ],
+          },
+        }, 200);
+      }
+      return _json({}, 404);
+    }
+
+    test('LKS does not send us to SSO: the saved session is reused', () async {
+      final api = _apiWith((options) {
+        if (options.uri.toString().contains('/portal4/cookie/login')) {
+          // Without redirect following: the 302 itself; with it: where the client ended up
+          return options.followRedirects
+              ? (_text('<html>ЛКС</html>', 200)..redirects = [RedirectRecord(302, 'GET', Uri.parse('https://lks.bmstu.ru/'))])
+              : _text('', 302, headers: {'location': ['https://lks.bmstu.ru/']});
+        }
+        return profileApi(options);
+      });
+
+      final profile = await api.login('student', 'secret');
+      expect(profile?.lastName, 'Тестов');
+      expect(api.isAuthenticated, isTrue);
+    });
+
+    test('SSO remembers the student and redirects straight back without a form', () async {
+      var posted = false;
+      final api = _apiWith((options) {
+        final url = options.uri.toString();
+        if (url.contains('/portal4/cookie/login')) {
+          return _text('', 302, headers: {'location': [_ssoUrl]});
+        }
+        if (url.startsWith(_ssoUrl)) {
+          // What the HTTP client reports after following Keycloak's redirect back to LKS
+          return ResponseBody.fromString('<html>ЛКС</html>', 200)
+            ..redirects = [RedirectRecord(302, 'GET', Uri.parse('https://lks.bmstu.ru/profile'))];
+        }
+        if (options.method == 'POST') posted = true;
+        return profileApi(options);
+      });
+
+      expect((await api.login('student', 'secret'))?.groupTitle, 'ИУ7-43Б');
+      expect(posted, isFalse, reason: 'no credentials sent when SSO already knows the student');
+    });
+
+    test('No SSO redirect and no session: the old clear error stays', () async {
+      final api = _apiWith((options) {
+        if (options.uri.toString().contains('/portal4/cookie/login')) {
+          // Without redirect following: the 302 itself; with it: where the client ended up
+          return options.followRedirects
+              ? (_text('<html>ЛКС</html>', 200)..redirects = [RedirectRecord(302, 'GET', Uri.parse('https://lks.bmstu.ru/'))])
+              : _text('', 302, headers: {'location': ['https://lks.bmstu.ru/']});
+        }
+        return _text('<html>login</html>', 200);
+      });
+      await expectLater(
+        api.login('student', 'secret'),
+        throwsA(predicate((e) => e.toString().contains('Не удалось подключиться к серверу авторизации'))),
+      );
+    });
+  });
+
   group('Keycloak login form detection', () {
     final page = Uri.parse('https://sso.bmstu.ru/realms/bmstu/protocol/openid-connect/auth?client_id=lks');
     String? extract(String html) => BmstuApiService.extractLoginFormAction(html, page);

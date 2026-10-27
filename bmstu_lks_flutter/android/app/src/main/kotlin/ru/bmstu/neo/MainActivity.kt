@@ -34,6 +34,15 @@ class MainActivity : FlutterActivity() {
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
 
+        // Silent push registration (see PushMessagingService); same channel as on iOS
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "ru.bmstu.neo/push").setMethodCallHandler { call, result ->
+            when (call.method) {
+                "enable" -> PushMessagingService.enable { token -> runOnUiThread { result.success(token) } }
+                "disable" -> PushMessagingService.disable { runOnUiThread { result.success(null) } }
+                else -> result.notImplemented()
+            }
+        }
+
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, WIDGET_CHANNEL).setMethodCallHandler { call, result ->
             when (call.method) {
                 "updateWidget" -> {

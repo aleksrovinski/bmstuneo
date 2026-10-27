@@ -56,6 +56,7 @@ class GradesFilterBar extends StatelessWidget {
               ),
               suffixIcon: searchController.text.isNotEmpty
                   ? IconButton(
+                      tooltip: 'Очистить поиск',
                       icon: Icon(Icons.clear_rounded,
                           size: 16, color: colorScheme.onSurfaceVariant),
                       onPressed: onClearSearch,

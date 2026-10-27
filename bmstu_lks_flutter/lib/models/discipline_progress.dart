@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 
 enum EventState {
@@ -5,6 +6,35 @@ enum EventState {
   submitted,  // Сдано / Выполнено / Защищено / Посещено
   notIssued,  // Не выдано (в плане семестра)
   missed,     // Пропущено / Не сдано
+}
+
+/// Status the student set by hand when LKS is behind (or wrong).
+enum ManualMark {
+  submitted('Сдано'),
+  missed('Не сдано'),
+  issued('Выдано'),
+  notIssued('Не выдано');
+
+  final String title;
+  const ManualMark(this.title);
+
+  /// Manual marks as stored on the device ({markKey: mark name}); unknown or
+  /// corrupted entries are skipped.
+  static Map<String, ManualMark> decodeAll(String? raw) {
+    if (raw == null || raw.isEmpty) return {};
+    try {
+      final byName = ManualMark.values.asNameMap();
+      return {
+        for (final entry in (jsonDecode(raw) as Map<String, dynamic>).entries)
+          if (byName[entry.value] != null) entry.key: byName[entry.value]!,
+      };
+    } catch (_) {
+      return {};
+    }
+  }
+
+  static String encodeAll(Map<String, ManualMark> marks) =>
+      jsonEncode(marks.map((key, value) => MapEntry(key, value.name)));
 }
 
 class ControlEvent {
@@ -19,6 +49,9 @@ class ControlEvent {
   final int controlIndex;
   final String? controlId;
   final Map<String, dynamic>? points; // rating thresholds e.g. point_3, point_4, point_5, point_all
+  /// Set when the student overrode the LKS status; [lksOriginal] keeps the LKS version.
+  final ManualMark? manualMark;
+  final ControlEvent? lksOriginal;
 
   ControlEvent({
     required this.type,
@@ -32,18 +65,84 @@ class ControlEvent {
     required this.controlIndex,
     this.controlId,
     this.points,
+    this.manualMark,
+    this.lksOriginal,
   });
 
+  /// Stable id for storing a manual mark: the LKS control id, or a composite
+  /// of discipline, type and index for events that have none.
+  String get markKey =>
+      (controlId != null && controlId!.isNotEmpty) ? controlId! : '$disciplineTitle|$type|$controlIndex';
+
+  /// Modules are graded with points, so their status is not set by hand.
+  bool get canMarkManually => type != 'М';
+
+  /// This event as the student marked it: the LKS stage is replaced with the one
+  /// that means [mark] for this event type, everything else is kept.
+  ControlEvent withManualMark(ManualMark mark) {
+    final String newStage;
+    switch (mark) {
+      case ManualMark.submitted:
+        newStage = type == 'СЗ' ? '4' : '2';
+      case ManualMark.missed:
+        newStage = '0';
+      case ManualMark.issued:
+        newStage = '1';
+      case ManualMark.notIssued:
+        newStage = '';
+    }
+    return ControlEvent(
+      type: type,
+      title: title,
+      week: week,
+      value: value,
+      stage: newStage,
+      passStatus: mark == ManualMark.submitted ? passStatus : null,
+      setDate: setDate,
+      disciplineTitle: disciplineTitle,
+      controlIndex: controlIndex,
+      controlId: controlId,
+      points: points,
+      manualMark: mark,
+      lksOriginal: lksOriginal ?? this,
+    );
+  }
+
+  static int? _asInt(dynamic raw) {
+    if (raw is num) return raw.toInt();
+    if (raw is String) return int.tryParse(raw.trim());
+    return null;
+  }
+
+  /// Points scored for a graded module (`М`); null while it is not graded yet.
+  /// '0' is how LKS shows a module that has not been graded, so it counts as null.
+  int? get moduleScore {
+    if (type != 'М') return null;
+    final score = _asInt(value);
+    return (score == null || score == 0) ? null : score;
+  }
+
+  /// Module threshold from LKS: `point_3` / `point_4` / `point_5` (minimum for
+  /// that grade) or `point_all` (maximum).
+  int? threshold(String key) => _asInt(points?[key]);
+
+  /// A graded module that scored below its pass threshold (`point_3`).
+  bool get isBelowThreshold {
+    final score = moduleScore;
+    final pass = threshold('point_3');
+    return score != null && pass != null && score < pass;
+  }
+
   // Submitted / completed: ONLY when stage is 2 (Выполнено), 3/13 (Защищено), 4 (Посещено), 12 (Работа на семинаре)
-  // or when points/value are graded for module.
+  // or when a module is graded at or above its pass threshold.
   // Stage == '1' is strictly NOT submitted.
   bool get isSubmitted {
     if (stage == '1' || stage == '0') return false;
+    // Graded modules come with stage '10'/'13' too; the score decides, not the stage
+    if (isBelowThreshold) return false;
     if (stage == '2' || stage == '3' || stage == '13' || stage == '4') return true;
     if (stage == '12' && type == 'СЗ') return true;
-    if (type == 'М' && value != null && value.toString().isNotEmpty && value.toString() != '0') {
-      return true;
-    }
+    if (moduleScore != null) return !isBelowThreshold;
     return false;
   }
 
@@ -52,8 +151,8 @@ class ControlEvent {
   // For РК/КР: "Назначено / Предстоит"
   bool get isIssued => stage == '1';
 
-  // Missed / Failed: stage == '0'
-  bool get isMissed => stage == '0';
+  // Missed / Failed: stage == '0', or a module graded below its pass threshold
+  bool get isMissed => stage == '0' || isBelowThreshold;
 
   // Not yet issued / Planned: stage is null or empty
   bool get isNotIssued => (stage == null || stage!.isEmpty) && !isSubmitted && !isMissed;
@@ -117,6 +216,7 @@ class ControlEvent {
     }
     if (isMissed) {
       if (type == 'РК' || type == 'КР') return 'Не сдан';
+      if (isBelowThreshold) return 'Недобор';
       return 'Пропущено';
     }
     if (isIssued) {
@@ -161,7 +261,10 @@ class ControlEvent {
       return 'Не выдана';
     }
     if (type == 'М') {
-      if (isSubmitted) return 'Зачтен ($value б.)';
+      final max = threshold('point_all');
+      final scored = max != null ? '$moduleScore из $max' : '$moduleScore';
+      if (isBelowThreshold) return 'Недобор ($scored б., порог ${threshold('point_3')})';
+      if (isSubmitted) return 'Зачтен ($scored б.)';
       if (isMissed) return 'Не зачтен';
       if (isIssued) return 'Предстоит';
       return 'Запланирован';
@@ -195,6 +298,7 @@ class ControlEvent {
     }
     if (isMissed) {
       if (type == 'РК' || type == 'КР') return 'Контроль не сдан в срок';
+      if (isBelowThreshold) return 'Баллов за модуль меньше порога на «3»';
       return 'Мероприятие пропущено';
     }
     if (isIssued) {
@@ -313,6 +417,23 @@ class DisciplineProgress {
     this.seminars = const [],
   });
 
+  /// This discipline with the student's manual marks laid over the LKS statuses.
+  DisciplineProgress withManualMarks(Map<String, ManualMark> marks) {
+    if (marks.isEmpty) return this;
+    List<ControlEvent> mark(List<ControlEvent> events) => [
+          for (final e in events)
+            (e.canMarkManually && marks[e.markKey] != null) ? e.withManualMark(marks[e.markKey]!) : e,
+        ];
+    return DisciplineProgress(
+      title: title,
+      disciplineUuid: disciplineUuid,
+      points: points,
+      controls: mark(controls),
+      laboratory: mark(laboratory),
+      seminars: mark(seminars),
+    );
+  }
+
   bool get hasControls => controls.isNotEmpty;
   bool get hasLaboratory => laboratory.isNotEmpty;
   bool get hasSeminars => seminars.isNotEmpty;
@@ -327,41 +448,39 @@ class DisciplineProgress {
     return null;
   }
 
-  int? get totalPoints {
-    final raw = points['point_all'];
-    if (raw is num) return raw.toInt();
-    if (raw is String) return int.tryParse(raw);
-    return null;
-  }
+  List<ControlEvent> get _modules => controls.where((c) => c.type == 'М').toList();
 
-  /// Estimated 5-point grade (5, 4, 3, 2 or null if in progress)
+  /// Points scored on the modules graded so far.
+  int get scoredModulePoints =>
+      _modules.map((m) => m.moduleScore).whereType<int>().fold(0, (a, b) => a + b);
+
+  /// Estimated 5-point grade (5, 4, 3, 2) for the modules graded so far,
+  /// or null while nothing can be judged yet.
+  ///
+  /// Each module carries its own thresholds (`point_3/4/5`), so the scored
+  /// points are compared with the thresholds of the same graded modules: being
+  /// halfway through the semester is not a fail. `points['point_all']` of the
+  /// discipline is its maximum, not the score, and is not used here.
   int? get estimatedGrade {
-    final tp = totalPoints;
-    if (tp == null || tp == 0) {
-      // Check sum of module values
-      final modules = controls.where((c) => c.type == 'М' && c.value != null).toList();
-      if (modules.isNotEmpty) {
-        int sum = 0;
-        for (final m in modules) {
-          final val = m.value;
-          if (val is num) {
-            sum += val.toInt();
-          } else if (val is String) {
-            sum += int.tryParse(val) ?? 0;
-          }
-        }
-        if (sum > 0) {
-          if (sum >= 85) return 5;
-          if (sum >= 71) return 4;
-          if (sum >= 60) return 3;
-          return 2;
-        }
-      }
-      return null;
+    final graded = _modules.where((m) => m.moduleScore != null).toList();
+    if (graded.isEmpty) return null;
+    final scored = scoredModulePoints;
+
+    final withThresholds = graded.every((m) =>
+        m.threshold('point_3') != null && m.threshold('point_4') != null && m.threshold('point_5') != null);
+    if (withThresholds) {
+      int sumOf(String key) => graded.fold(0, (a, m) => a + m.threshold(key)!);
+      if (scored >= sumOf('point_5')) return 5;
+      if (scored >= sumOf('point_4')) return 4;
+      if (scored >= sumOf('point_3')) return 3;
+      return 2;
     }
-    if (tp >= 85) return 5;
-    if (tp >= 71) return 4;
-    if (tp >= 60) return 3;
+
+    // No per-module thresholds: only the final 100-point total can be judged
+    if (graded.length < _modules.length) return null;
+    if (scored >= 85) return 5;
+    if (scored >= 71) return 4;
+    if (scored >= 60) return 3;
     return 2;
   }
 
@@ -371,7 +490,8 @@ class DisciplineProgress {
     if (grade == 4) return 'Хорошо (4)';
     if (grade == 3) return 'Удовл. (3)';
     if (grade == 2) return 'Неудовл. (2)';
-    if (totalPoints != null && totalPoints! > 0) return '$totalPoints б.';
+    final scored = scoredModulePoints;
+    if (scored > 0) return 'В процессе ($scored б.)';
     return 'В процессе';
   }
 

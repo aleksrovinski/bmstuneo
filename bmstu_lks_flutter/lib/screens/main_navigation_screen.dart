@@ -10,6 +10,7 @@ import 'schedule_screen.dart';
 import 'grades_screen.dart';
 import 'fv_screen.dart';
 import 'profile_screen.dart';
+import 'login_screen.dart';
 import '../services/widget_sync_service.dart';
 
 class MainNavigationScreen extends StatefulWidget {
@@ -23,6 +24,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
     with WidgetsBindingObserver {
   int _currentIndex = 0;
   bool _hasInitialLoaded = false;
+  int _loadedForSession = 0;
 
   @override
   void initState() {
@@ -52,6 +54,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
     super.didChangeDependencies();
     if (!_hasInitialLoaded) {
       _hasInitialLoaded = true;
+      _loadedForSession = context.read<AuthProvider>().sessionGeneration;
       _triggerInitialDataLoad();
     }
   }
@@ -85,11 +88,24 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
     setState(() => _currentIndex = index);
   }
 
+  // A (re)login happened after the first load: data that failed while the session
+  // was expired (progress, PE, session results) is fetched again
+  void _reloadAfterNewSession(int generation) {
+    if (generation == _loadedForSession) return;
+    _loadedForSession = generation;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _triggerInitialDataLoad();
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isIOS = Theme.of(context).platform == TargetPlatform.iOS;
     final isDark = theme.brightness == Brightness.dark;
+    final auth = context.watch<AuthProvider>();
+    _reloadAfterNewSession(auth.sessionGeneration);
+    final showReauth = auth.needsLogin && auth.isFullAuth;
 
     final pages = [
       HomeScreen(
@@ -133,9 +149,21 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
 
     return Scaffold(
       extendBody: false,
-      body: IndexedStack(
-        index: _currentIndex,
-        children: pages,
+      body: Column(
+        children: [
+          if (showReauth) const _ReauthBanner(),
+          Expanded(
+            // The banner already sits under the status bar
+            child: MediaQuery.removePadding(
+              context: context,
+              removeTop: showReauth,
+              child: IndexedStack(
+                index: _currentIndex,
+                children: pages,
+              ),
+            ),
+          ),
+        ],
       ),
       bottomNavigationBar: isIOS
           ? Container(
@@ -184,6 +212,42 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
                 destinations: destinations,
               ),
             ),
+    );
+  }
+}
+
+/// Shown while the cached profile can't be refreshed because LKS needs the password again.
+class _ReauthBanner extends StatelessWidget {
+  const _ReauthBanner();
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Material(
+      color: scheme.errorContainer,
+      child: SafeArea(
+        bottom: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 8, 8),
+          child: Row(
+            children: [
+              Icon(Icons.lock_clock_rounded, color: scheme.onErrorContainer, size: 20),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  'Сессия ЛКС истекла — показаны сохранённые данные',
+                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: scheme.onErrorContainer),
+                ),
+              ),
+              TextButton(
+                onPressed: () => LoginScreen.showReauth(context),
+                style: TextButton.styleFrom(foregroundColor: scheme.onErrorContainer),
+                child: const Text('Войти', style: TextStyle(fontWeight: FontWeight.w800)),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

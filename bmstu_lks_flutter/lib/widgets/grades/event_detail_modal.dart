@@ -1,7 +1,69 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import '../../models/discipline_progress.dart';
+import '../../providers/progress_provider.dart';
 
 class EventDetailModal {
+  // Lets the student fix a status LKS hasn't updated yet; stored on this device only
+  static Widget _buildManualMarkSection(BuildContext ctx, ControlEvent e) {
+    final theme = Theme.of(ctx);
+    ProgressProvider? prog;
+    try {
+      prog = Provider.of<ProgressProvider>(ctx, listen: false);
+    } catch (_) {
+      return const SizedBox.shrink(); // No provider above (isolated widget tests)
+    }
+    final original = e.lksOriginal ?? e;
+
+    void choose(ManualMark? mark) {
+      prog!.setManualMark(original, mark);
+      Navigator.of(ctx).pop();
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Icon(Icons.edit_rounded, size: 16, color: theme.colorScheme.primary),
+            const SizedBox(width: 6),
+            Text(
+              'Моя отметка',
+              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: theme.colorScheme.onSurface),
+            ),
+            const Spacer(),
+            if (e.manualMark != null)
+              Flexible(
+                child: Text(
+                  'в ЛКС: ${original.shortBadgeText}',
+                  style: TextStyle(fontSize: 11, color: theme.colorScheme.onSurfaceVariant),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 6,
+          runSpacing: 6,
+          children: [
+            ChoiceChip(
+              label: const Text('Как в ЛКС'),
+              selected: e.manualMark == null,
+              onSelected: (_) => choose(null),
+            ),
+            for (final mark in ManualMark.values)
+              ChoiceChip(
+                label: Text(mark.title),
+                selected: e.manualMark == mark,
+                onSelected: (_) => choose(mark),
+              ),
+          ],
+        ),
+      ],
+    );
+  }
+
   static void show(BuildContext context, ControlEvent e) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
@@ -120,6 +182,11 @@ class EventDetailModal {
                   ],
                 ),
               ),
+
+              if (e.canMarkManually) ...[
+                const SizedBox(height: 14),
+                _buildManualMarkSection(ctx, e),
+              ],
 
               const SizedBox(height: 16),
               const Divider(height: 1, thickness: 0.5),

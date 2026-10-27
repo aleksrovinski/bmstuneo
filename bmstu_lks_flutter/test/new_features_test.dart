@@ -94,19 +94,24 @@ void main() {
     });
   });
 
-  group('ThemeProvider & OLED True Black Tests', () {
-    test('Toggles OLED Black mode and sets pure black backgrounds', () async {
+  group('ThemeProvider', () {
+    test('Defaults to the system mode and Material You; dark is pure black', () async {
       final themeProv = ThemeProvider();
 
       expect(themeProv.themeMode, AppThemeMode.system);
-      expect(themeProv.isOled, isFalse);
+      expect(themeProv.accentColor, AppAccentColor.dynamicColor);
 
-      await themeProv.setThemeMode(AppThemeMode.oled);
-      expect(themeProv.isOled, isTrue);
-
+      await themeProv.setThemeMode(AppThemeMode.dark);
       final darkTheme = themeProv.buildDarkTheme(null);
       expect(darkTheme.scaffoldBackgroundColor, Colors.black);
       expect(darkTheme.colorScheme.surface, Colors.black);
+    });
+
+    test('The former OLED mode opens as the dark theme', () async {
+      SharedPreferences.setMockInitialValues({'bmstu_pref_theme_mode_v2': 'oled'});
+      final themeProv = ThemeProvider();
+      await Future<void>.delayed(Duration.zero);
+      expect(themeProv.themeMode, AppThemeMode.dark);
     });
 
     test('Changes accent colors correctly', () async {
@@ -204,52 +209,99 @@ void main() {
   });
 
   group('ProgressProvider GPA & Scholarship Analytics Tests', () {
-    test('Calculates GPA and scholarship status accurately', () {
-      // 1. Excellent (all 5) -> PGAS
-      final disciplines = [
-        DisciplineProgress(
-          title: 'Математический анализ',
-          points: {'point_all': 90},
-          controls: [],
-        ),
-        DisciplineProgress(
-          title: 'Теоретическая механика',
-          points: {'point_all': 88},
-          controls: [],
-        ),
-      ];
+    // Module thresholds as LKS sends them (strings), from a real 3-module discipline
+    Map<String, dynamic> thresholds(int p3, int p4, int p5, int all) =>
+        {'point_3': '$p3', 'point_4': '$p4', 'point_5': '$p5', 'point_all': '$all'};
 
-      // Inject disciplines via reflection/direct access simulation
-      final discJson = disciplines.map((d) => d.toJson()).toList();
-      final loaded = discJson.map((d) => DisciplineProgress.fromJson(d)).toList();
+    ControlEvent module(int index, String? value, Map<String, dynamic>? points) => ControlEvent(
+          type: 'М',
+          title: 'Модуль $index',
+          week: index * 5,
+          value: value,
+          points: points,
+          disciplineTitle: 'Дисциплина',
+          controlIndex: index,
+        );
+
+    DisciplineProgress discipline(List<ControlEvent> modules, {Map<String, dynamic> points = const {}}) =>
+        DisciplineProgress(title: 'Дисциплина', points: points, controls: modules);
+
+    test('Mid-semester grade compares graded modules with their own thresholds', () {
+      // Module 1: 27 of 33 (thresholds 19/23/28) -> "4"; modules 2 and 3 not graded yet
+      final good = discipline([
+        module(1, '27', thresholds(19, 23, 28, 33)),
+        module(2, null, thresholds(19, 23, 28, 33)),
+        module(3, null, thresholds(20, 23, 28, 34)),
+      ]);
+      expect(good.estimatedGrade, 4);
+      expect(good.isPassed, isTrue);
+
+      // 9 of 35 with a pass threshold of 21: a real shortfall
+      final behind = discipline([module(1, '9', thresholds(21, 24, 29, 35))]);
+      expect(behind.estimatedGrade, 2);
+      expect(behind.isPassed, isFalse);
+
+      // Two graded modules: 28 + 26 = 54 vs 5-threshold 28 + 28 = 56 -> "4"
+      final twoGraded = discipline([
+        module(1, '28', thresholds(19, 23, 28, 33)),
+        module(2, '26', thresholds(19, 23, 28, 33)),
+        module(3, null, thresholds(20, 23, 28, 34)),
+      ]);
+      expect(twoGraded.estimatedGrade, 4);
+      expect(twoGraded.gradeDisplay, 'Хорошо (4)');
+    });
+
+    test('Nothing graded yet is "in progress", not a fail', () {
+      final none = discipline([
+        module(1, null, thresholds(19, 23, 28, 33)),
+        module(2, '0', thresholds(19, 23, 28, 33)),
+      ]);
+      expect(none.estimatedGrade, isNull);
+      expect(none.isPassed, isFalse);
+      expect(none.gradeDisplay, 'В процессе');
+
+      // point_all of the discipline is its maximum, not a score
+      expect(discipline([], points: {'point_all': 100}).estimatedGrade, isNull);
+    });
+
+    test('Without module thresholds only a fully graded discipline gets a grade', () {
+      final partial = discipline([module(1, '40', null), module(2, null, null)]);
+      expect(partial.estimatedGrade, isNull);
+      expect(partial.gradeDisplay, 'В процессе (40 б.)');
+
+      expect(discipline([module(1, '45', null), module(2, '43', null)]).estimatedGrade, 5);
+      expect(discipline([module(1, '30', null), module(2, '42', null)]).estimatedGrade, 4);
+      expect(discipline([module(1, '30', null), module(2, '20', null)]).estimatedGrade, 2);
+    });
+
+    test('Calculates GPA and scholarship status from module estimates', () {
+      final loaded = [
+        discipline([module(1, '30', thresholds(19, 23, 28, 33))]), // 5
+        discipline([module(1, '29', thresholds(19, 23, 28, 33))]), // 5
+      ].map((d) => DisciplineProgress.fromJson(d.toJson())).toList();
 
       expect(loaded[0].estimatedGrade, 5);
       expect(loaded[1].estimatedGrade, 5);
 
-      // Add a 4
-      final withGood = [
+      final prog = ProgressProvider(apiService: BmstuApiService());
+      prog.setDisciplinesForTest([
         ...loaded,
-        DisciplineProgress(
-          title: 'Физика',
-          points: {'point_all': 75}, // 4
-          controls: [],
-        ),
-      ];
+        discipline([module(1, '25', thresholds(19, 23, 28, 33))]), // 4
+      ]);
+      expect(prog.gpa, closeTo(4.66, 0.02));
+      expect(prog.scholarshipStatus, isNot(ScholarshipStatus.atRisk));
 
-      final gpa = (5 + 5 + 4) / 3;
-      expect(gpa, closeTo(4.66, 0.02));
+      prog.setDisciplinesForTest([
+        ...loaded,
+        discipline([module(1, '20', thresholds(19, 23, 28, 33))]), // 3
+      ]);
+      expect(prog.scholarshipStatus, ScholarshipStatus.atRisk);
 
-      // Add a 3 -> scholarship should be at risk
-      final withSatisfactory = [
-        ...withGood,
-        DisciplineProgress(
-          title: 'Инженерная графика',
-          points: {'point_all': 62}, // 3
-          controls: [],
-        ),
-      ];
-
-      expect(withSatisfactory[3].estimatedGrade, 3);
+      // Mid-semester with nothing graded is not a scholarship risk
+      prog.setDisciplinesForTest([
+        discipline([module(1, null, thresholds(19, 23, 28, 33))]),
+      ]);
+      expect(prog.scholarshipStatus, ScholarshipStatus.inProgress);
     });
   });
 

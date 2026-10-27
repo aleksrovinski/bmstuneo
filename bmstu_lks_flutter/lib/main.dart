@@ -1,8 +1,13 @@
+import 'package:cookie_jar/cookie_jar.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:workmanager/workmanager.dart';
 import 'package:dynamic_color/dynamic_color.dart';
 import 'services/auth_storage.dart';
 import 'services/bmstu_api_service.dart';
+import 'services/secure_cookie_storage.dart';
+import 'services/background_sync.dart';
+import 'services/push_channel.dart';
 import 'providers/auth_provider.dart';
 import 'providers/schedule_provider.dart';
 import 'providers/progress_provider.dart';
@@ -17,8 +22,16 @@ import 'constants/app_version.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
+  // Registers the background progress check (scheduled only if the student enables it)
+  Workmanager().initialize(backgroundSyncDispatcher);
+  PushChannel.listen();
+  // Push tokens can change; re-register on every launch while notifications are on
+  BackgroundSync.isEnabled().then((on) => on ? PushChannel.enable() : null);
   final authStorage = AuthStorage();
-  final apiService = BmstuApiService();
+  // The LKS session survives restarts, so the password isn't resent on every launch
+  final apiService = BmstuApiService(
+    cookieJar: PersistCookieJar(storage: SecureCookieStorage()),
+  );
 
   runApp(
     MultiProvider(
@@ -106,7 +119,9 @@ class _AuthGateState extends State<AuthGate> {
     final auth = context.read<AuthProvider>();
     try {
       await auth.checkSavedAuth();
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('[AuthGate] Saved session check failed: $e');
+    }
     if (mounted) {
       setState(() {
         _isChecking = false;

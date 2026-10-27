@@ -91,7 +91,7 @@ void main() {
     );
 
     // Tap on Schedule tab (index 2) via NavigationBar
-    await tester.tap(find.text('Расписание'));
+    await tester.tap(find.descendant(of: find.byType(NavigationBar), matching: find.text('Расписание')));
     await tester.pumpAndSettle();
 
     // ScheduleScreen should now be in tree

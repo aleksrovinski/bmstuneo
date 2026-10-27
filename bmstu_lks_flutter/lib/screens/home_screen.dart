@@ -57,6 +57,16 @@ class _HomeScreenState extends State<HomeScreen> {
     final liveStatus = sched.getLivePairStatus();
     final nearestDeadlines = prog.getNearestDeadlines(currentWeekNum, limit: 3);
     final todayLessons = sched.lessonsForToday;
+    final now = DateTime.now();
+    final nowMinutes = now.hour * 60 + now.minute;
+    int minutesOf(String hhmm) {
+      final parts = hhmm.split(':');
+      return parts.length < 2 ? 0 : (int.tryParse(parts[0]) ?? 0) * 60 + (int.tryParse(parts[1]) ?? 0);
+    }
+    // Once the last pair of the day is over the list switches to tomorrow
+    final showTomorrow = liveStatus.type == LivePairType.finishedForToday ||
+        todayLessons.isEmpty ||
+        todayLessons.every((l) => minutesOf(l.endTime) <= nowMinutes);
 
     final nearestPe = NearestPeLesson.findNearest(
       records: fv.currentRecords,
@@ -142,11 +152,11 @@ class _HomeScreenState extends State<HomeScreen> {
         },
         child: SingleChildScrollView(
           physics: const AlwaysScrollableScrollPhysics(),
-          padding: const EdgeInsets.only(bottom: 32),
+          padding: const EdgeInsets.only(bottom: 24),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              const SizedBox(height: 8),
+              const SizedBox(height: 4),
 
               if (sched.syncStatus != null && !sched.syncStatus!.isLive) ...[
                 OfflineStatusBanner(
@@ -167,30 +177,12 @@ class _HomeScreenState extends State<HomeScreen> {
                 _buildFvBanner(context, fv, nearestPe),
               ],
 
-              // 5. Upcoming Deadlines Section
-              const SizedBox(height: 16),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 20),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(
-                      'Ближайшие дедлайны и РК',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w800,
-                        color: theme.colorScheme.onSurface,
-                      ),
-                    ),
-                    if (auth.isFullAuth)
-                      TextButton(
-                        onPressed: widget.onOpenGrades,
-                        child: const Text('Прогресс →', style: TextStyle(fontSize: 12)),
-                      ),
-                  ],
-                ),
+              // Upcoming deadlines
+              _buildSectionHeader(
+                'Ближайшие дедлайны',
+                action: auth.isFullAuth ? 'Успеваемость' : null,
+                onAction: widget.onOpenGrades,
               ),
-              const SizedBox(height: 4),
 
               if (auth.isGuest)
                 _buildGuestFeatureNotice('Дедлайны и баллы доступны после авторизации в ЛКС')
@@ -209,55 +201,18 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                 ),
 
-              // 6. Schedule Preview (Today or Tomorrow if today ended)
-              const SizedBox(height: 20),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 20),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            (liveStatus.type == LivePairType.finishedForToday || todayLessons.isEmpty)
-                                ? 'Пары на завтра (${sched.tomorrowDayTitle})'
-                                : 'Расписание на сегодня',
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w800,
-                              color: theme.colorScheme.onSurface,
-                            ),
-                          ),
-                          if (liveStatus.type == LivePairType.finishedForToday)
-                            Text(
-                              'Пары на сегодня уже закончились',
-                              style: TextStyle(
-                                fontSize: 11,
-                                fontWeight: FontWeight.w500,
-                                color: theme.colorScheme.onSurfaceVariant,
-                              ),
-                            ),
-                        ],
-                      ),
-                    ),
-                    TextButton(
-                      onPressed: widget.onOpenSchedule,
-                      child: const Text('Всё расписание →', style: TextStyle(fontSize: 12)),
-                    ),
-                  ],
-                ),
+              // Schedule preview: today, or tomorrow once today is over
+              _buildSectionHeader(
+                showTomorrow
+                    ? 'Завтра, ${sched.tomorrowDayTitle.toLowerCase()}'
+                    : 'Сегодня',
+                action: 'Всё расписание',
+                onAction: widget.onOpenSchedule,
               ),
-              const SizedBox(height: 4),
 
-              if (liveStatus.type == LivePairType.finishedForToday || todayLessons.isEmpty) ...[
+              if (showTomorrow) ...[
                 if (sched.lessonsForTomorrow.isEmpty)
-                  _buildEmptyNotice(
-                    sched.tomorrowWeekday == 7
-                        ? 'Завтра воскресенье — пар нет! Отдыхайте! ✨'
-                        : 'На завтра (${sched.tomorrowDayTitle}) пар нет ✨',
-                  )
+                  _buildEmptyNotice('Пар нет — можно отдохнуть ✨')
                 else
                   ...sched.lessonsForTomorrow.map((l) => PairCard(lesson: l, isCurrent: false)),
               ] else ...[
@@ -275,13 +230,36 @@ class _HomeScreenState extends State<HomeScreen> {
 
 
 
+  Widget _buildSectionHeader(String title, {String? action, VoidCallback? onAction}) {
+    final scheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 12, 8, 2),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              title,
+              style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: scheme.onSurface),
+            ),
+          ),
+          if (action != null)
+            TextButton(
+              onPressed: onAction,
+              style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
+              child: Text(action, style: const TextStyle(fontSize: 12.5)),
+            ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildGuestFeatureNotice(String message) {
     return Builder(
       builder: (context) {
         final theme = Theme.of(context);
         return Container(
-          margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-          padding: const EdgeInsets.all(16),
+          margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+          padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
             color: theme.colorScheme.primary.withValues(alpha: 0.08),
             borderRadius: BorderRadius.circular(14),
@@ -311,10 +289,10 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget _buildEmptyNotice(String text) {
     final theme = Theme.of(context);
     return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-      padding: const EdgeInsets.all(20),
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.35),
+        color: theme.colorScheme.surfaceContainerLow,
         borderRadius: BorderRadius.circular(14),
       ),
       child: Center(
@@ -332,169 +310,49 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _buildFvBanner(BuildContext context, FvProvider fv, NearestPeLesson? nearestPe) {
-    final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
-    final isDark = theme.brightness == Brightness.dark;
-    final data = fv.data;
-    final isCreditReady = data?.isCreditReady ?? false;
+    final scheme = Theme.of(context).colorScheme;
+    final isCreditReady = fv.data?.isCreditReady ?? false;
+    final isNow = nearestPe?.isNow == true;
 
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-      decoration: BoxDecoration(
-        color: isDark ? colorScheme.surfaceContainer : colorScheme.surfaceContainerLow,
-        borderRadius: BorderRadius.circular(22),
-        border: Border.all(
-          color: colorScheme.outlineVariant.withValues(alpha: 0.7),
-          width: 1.0,
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: colorScheme.shadow.withValues(alpha: isDark ? 0.2 : 0.03),
-            blurRadius: 12,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
       child: Material(
-        color: Colors.transparent,
+        color: isNow ? scheme.primaryContainer.withValues(alpha: 0.55) : scheme.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(18),
         child: InkWell(
           onTap: widget.onOpenFv,
-          borderRadius: BorderRadius.circular(22),
+          borderRadius: BorderRadius.circular(18),
           child: Padding(
-            padding: const EdgeInsets.all(14),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+            padding: const EdgeInsets.fromLTRB(12, 10, 8, 10),
+            child: Row(
               children: [
-                // Top Header Row
-                Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        color: colorScheme.primaryContainer,
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      child: Icon(
-                        Icons.fitness_center_rounded,
-                        color: colorScheme.onPrimaryContainer,
-                        size: 20,
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Text(
-                        'Физкультура (ФКиС)',
-                        style: TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w700,
-                          color: colorScheme.onSurface,
-                        ),
-                      ),
-                    ),
-                    if (isCreditReady) ...[
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                        decoration: BoxDecoration(
-                          color: colorScheme.primaryContainer,
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Text(
-                          'Зачёт готов! 🎉',
-                          style: TextStyle(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w700,
-                            color: colorScheme.onPrimaryContainer,
-                          ),
-                        ),
-                      ),
-                    ] else ...[
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                        decoration: BoxDecoration(
-                          color: colorScheme.surfaceContainerHigh,
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Text(
-                          '${fv.studyPoints}/60 б. • ${fv.studyAttends}/25 пос.',
-                          style: TextStyle(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w600,
-                            color: colorScheme.onSurfaceVariant,
-                          ),
-                        ),
-                      ),
-                    ],
-                    const SizedBox(width: 4),
-                    Icon(
-                      Icons.chevron_right_rounded,
-                      color: colorScheme.onSurfaceVariant,
-                      size: 20,
-                    ),
-                  ],
-                ),
-
-                const SizedBox(height: 10),
-
-                // Nearest PE Lesson box
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                  decoration: BoxDecoration(
-                    color: nearestPe?.isNow == true
-                        ? colorScheme.primaryContainer.withValues(alpha: 0.6)
-                        : (isDark ? colorScheme.surfaceContainerHigh : colorScheme.surface),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(
-                      color: nearestPe?.isNow == true
-                          ? colorScheme.primary.withValues(alpha: 0.4)
-                          : colorScheme.outlineVariant,
-                    ),
-                  ),
-                  child: Row(
+                Icon(Icons.fitness_center_rounded, color: scheme.primary, size: 22),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Icon(
-                        nearestPe?.isNow == true
-                            ? Icons.play_circle_fill_rounded
-                            : Icons.alarm_on_rounded,
-                        size: 20,
-                        color: colorScheme.primary,
+                      Text(
+                        isCreditReady
+                            ? 'Физкультура · зачёт готов'
+                            : 'Физкультура · ${fv.studyPoints}/60 б., ${fv.studyAttends}/25 пос.',
+                        style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700, color: scheme.onSurface),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                       ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              nearestPe != null
-                                  ? 'Ближайшая пара: ${nearestPe.dayTitle}, ${nearestPe.time}'
-                                  : 'Ближайших занятий не найдено',
-                              style: TextStyle(
-                                fontSize: 12,
-                                fontWeight: FontWeight.w700,
-                                color: nearestPe?.isNow == true
-                                    ? colorScheme.onPrimaryContainer
-                                    : colorScheme.onSurface,
-                              ),
-                            ),
-                            const SizedBox(height: 2),
-                            Text(
-                              nearestPe != null
-                                  ? '${nearestPe.title} • ${nearestPe.place}${nearestPe.teacher.isNotEmpty ? " • ${nearestPe.teacher}" : ""}'
-                                  : 'Нажмите для перехода в раздел ФКиС',
-                              style: TextStyle(
-                                fontSize: 11,
-                                color: nearestPe?.isNow == true
-                                    ? colorScheme.onPrimaryContainer.withValues(alpha: 0.85)
-                                    : colorScheme.onSurfaceVariant,
-                              ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ],
-                        ),
+                      const SizedBox(height: 2),
+                      Text(
+                        nearestPe != null
+                            ? '${isNow ? 'Сейчас' : '${nearestPe.dayTitle}, ${nearestPe.time}'} · ${nearestPe.place}'
+                            : 'Ближайших занятий не найдено',
+                        style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                       ),
                     ],
                   ),
                 ),
+                Icon(Icons.chevron_right_rounded, color: scheme.onSurfaceVariant, size: 20),
               ],
             ),
           ),

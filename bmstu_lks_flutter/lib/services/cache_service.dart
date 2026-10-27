@@ -91,7 +91,9 @@ class AppCacheManager {
           cachedAt: item.cachedAt,
           sizeBytes: item.sizeBytes,
         );
-      } catch (_) {}
+      } catch (e) {
+        debugPrint('[CacheService] Corrupted cache entry ignored: $e');
+      }
     }
 
     // 2. Read from L2 Disk
@@ -131,7 +133,9 @@ class AppCacheManager {
       final prefs = await SharedPreferences.getInstance();
       await prefs.remove(key);
       await prefs.remove('$key$prefixTimeSuffix');
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('[CacheService] Failed to remove cache entry: $e');
+    }
   }
 
   /// Calculate total cache size and entry statistics
@@ -171,7 +175,9 @@ class AppCacheManager {
           }
         }
       }
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('[CacheService] Failed to compute cache size: $e');
+    }
 
     return CacheStats(
       totalSizeBytes: totalBytes,
@@ -203,6 +209,8 @@ class AppCacheManager {
           }
         }
       }
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('[CacheService] Failed to clear cache: $e');
+    }
   }
 }

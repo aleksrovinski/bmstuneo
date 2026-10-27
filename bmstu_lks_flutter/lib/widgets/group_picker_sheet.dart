@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../services/bmstu_api_service.dart';
 import '../services/bmstu_groups_catalog.dart';
+import '../services/groups_catalog_sync.dart';
+import '../providers/auth_provider.dart';
 import '../providers/favorites_provider.dart';
 
 class GroupPickerSheet extends StatefulWidget {
@@ -38,6 +41,19 @@ class _GroupPickerSheetState extends State<GroupPickerSheet> {
     super.initState();
     _results = BmstuGroupsCatalog.popularGroups;
     _searchController.addListener(_onSearchChanged);
+    _refreshCatalog();
+  }
+
+  // Pull a fresh group list in the background; the bundled one is shown meanwhile
+  Future<void> _refreshCatalog() async {
+    BmstuApiService? api;
+    try {
+      api = context.read<AuthProvider>().apiService;
+    } catch (_) {
+      return; // No AuthProvider above (isolated widget tests)
+    }
+    final changed = await GroupsCatalogSync.ensureFresh(api);
+    if (changed && mounted) _onSearchChanged();
   }
 
   @override
@@ -97,7 +113,7 @@ class _GroupPickerSheetState extends State<GroupPickerSheet> {
                 ),
                 const Spacer(),
                 Text(
-                  '${BmstuGroupsCatalog.allGroups.length} групп',
+                  '${BmstuGroupsCatalog.count} групп',
                   style: TextStyle(
                     fontSize: 12,
                     color: theme.colorScheme.onSurfaceVariant,
@@ -128,6 +144,7 @@ class _GroupPickerSheetState extends State<GroupPickerSheet> {
                 ),
                 suffixIcon: _searchController.text.isNotEmpty
                     ? IconButton(
+                        tooltip: 'Очистить поиск',
                         icon: Icon(Icons.clear, size: 18, color: theme.colorScheme.onSurfaceVariant),
                         onPressed: () => _searchController.clear(),
                       )

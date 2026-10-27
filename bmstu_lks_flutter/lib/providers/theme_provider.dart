@@ -1,12 +1,11 @@
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 enum AppThemeMode {
   system,
   light,
-  dark,
-  oled;
+  // Pure black: easy on OLED screens and the only dark variant
+  dark;
 
   String get title {
     switch (this) {
@@ -16,8 +15,6 @@ enum AppThemeMode {
         return 'Светлая';
       case AppThemeMode.dark:
         return 'Тёмная';
-      case AppThemeMode.oled:
-        return 'OLED Black';
     }
   }
 
@@ -29,36 +26,37 @@ enum AppThemeMode {
         return Icons.light_mode_rounded;
       case AppThemeMode.dark:
         return Icons.dark_mode_rounded;
-      case AppThemeMode.oled:
-        return Icons.contrast_rounded;
     }
   }
 }
 
 enum AppAccentColor {
+  // Wallpaper colors on Android 12+; elsewhere falls back to Bauman blue
+  dynamicColor(Color(0xFF0070F3), 'Material You'),
   baumanBlue(Color(0xFF0070F3), 'Бауманский синий'),
   deepNavy(Color(0xFF0B4F9C), 'Академический'),
   emerald(Color(0xFF10B981), 'Изумрудный'),
   amethyst(Color(0xFF8B5CF6), 'Аметистовый'),
   crimson(Color(0xFFE11D48), 'Рубиновый'),
-  amber(Color(0xFFF59E0B), 'Янтарный'),
-  dynamicColor(Color(0xFF6366F1), 'Material You');
+  amber(Color(0xFFF59E0B), 'Янтарный');
 
   final Color color;
   final String title;
   const AppAccentColor(this.color, this.title);
 }
 
+/// Bundled with the app (assets/fonts), see pubspec.yaml.
+const String appFontFamily = 'Onest';
+
 class ThemeProvider with ChangeNotifier {
   static const _keyThemeMode = 'bmstu_pref_theme_mode_v2';
   static const _keyAccentColor = 'bmstu_pref_accent_color_v2';
 
   AppThemeMode _themeMode = AppThemeMode.system;
-  AppAccentColor _accentColor = AppAccentColor.baumanBlue;
+  AppAccentColor _accentColor = AppAccentColor.dynamicColor;
 
   AppThemeMode get themeMode => _themeMode;
   AppAccentColor get accentColor => _accentColor;
-  bool get isOled => _themeMode == AppThemeMode.oled;
 
   ThemeProvider() {
     _loadPreferences();
@@ -69,20 +67,25 @@ class ThemeProvider with ChangeNotifier {
       final prefs = await SharedPreferences.getInstance();
       final modeStr = prefs.getString(_keyThemeMode);
       if (modeStr != null) {
-        _themeMode = AppThemeMode.values.firstWhere(
-          (m) => m.name == modeStr,
-          orElse: () => AppThemeMode.system,
-        );
+        // 'oled' was a separate mode before it became the dark theme
+        _themeMode = modeStr == 'oled'
+            ? AppThemeMode.dark
+            : AppThemeMode.values.firstWhere(
+                (m) => m.name == modeStr,
+                orElse: () => AppThemeMode.system,
+              );
       }
       final colorStr = prefs.getString(_keyAccentColor);
       if (colorStr != null) {
         _accentColor = AppAccentColor.values.firstWhere(
           (c) => c.name == colorStr,
-          orElse: () => AppAccentColor.baumanBlue,
+          orElse: () => AppAccentColor.dynamicColor,
         );
       }
       notifyListeners();
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('[ThemeProvider] Failed to load theme settings: $e');
+    }
   }
 
   Future<void> setThemeMode(AppThemeMode mode) async {
@@ -91,7 +94,9 @@ class ThemeProvider with ChangeNotifier {
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString(_keyThemeMode, mode.name);
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('[ThemeProvider] Failed to save theme mode: $e');
+    }
   }
 
   Future<void> setAccentColor(AppAccentColor color) async {
@@ -100,7 +105,9 @@ class ThemeProvider with ChangeNotifier {
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString(_keyAccentColor, color.name);
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('[ThemeProvider] Failed to save accent color: $e');
+    }
   }
 
   ThemeMode get materialThemeMode {
@@ -110,7 +117,6 @@ class ThemeProvider with ChangeNotifier {
       case AppThemeMode.light:
         return ThemeMode.light;
       case AppThemeMode.dark:
-      case AppThemeMode.oled:
         return ThemeMode.dark;
     }
   }
@@ -123,8 +129,6 @@ class ThemeProvider with ChangeNotifier {
             seedColor: _accentColor.color,
             brightness: Brightness.light,
           );
-
-    final textTheme = GoogleFonts.interTextTheme(ThemeData.light().textTheme);
 
     return ThemeData(
       useMaterial3: true,
@@ -151,43 +155,36 @@ class ThemeProvider with ChangeNotifier {
         backgroundColor: colorScheme.surface,
         labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
       ),
-      textTheme: textTheme,
+      fontFamily: appFontFamily,
     );
   }
 
-  /// Build Dark / OLED ThemeData
+  /// Build the dark ThemeData: black background, accent surfaces from the scheme
   ThemeData buildDarkTheme(ColorScheme? dynamicDark) {
-    final isOledActive = _themeMode == AppThemeMode.oled;
-
-    var colorScheme = (_accentColor == AppAccentColor.dynamicColor && dynamicDark != null)
+    final base = (_accentColor == AppAccentColor.dynamicColor && dynamicDark != null)
         ? dynamicDark
         : ColorScheme.fromSeed(
             seedColor: _accentColor.color,
             brightness: Brightness.dark,
           );
-
-    if (isOledActive) {
-      colorScheme = colorScheme.copyWith(
-        surface: Colors.black,
-        surfaceContainerLowest: Colors.black,
-        surfaceContainerLow: const Color(0xFF0D0D0D),
-        surfaceContainer: const Color(0xFF121212),
-        surfaceContainerHigh: const Color(0xFF181818),
-        surfaceContainerHighest: const Color(0xFF222222),
-        onSurface: Colors.white,
-        outlineVariant: const Color(0xFF282828),
-      );
-    }
-
-    final textTheme = GoogleFonts.interTextTheme(ThemeData.dark().textTheme);
+    final colorScheme = base.copyWith(
+      surface: Colors.black,
+      surfaceContainerLowest: Colors.black,
+      surfaceContainerLow: const Color(0xFF0D0D0D),
+      surfaceContainer: const Color(0xFF141414),
+      surfaceContainerHigh: const Color(0xFF1C1C1C),
+      surfaceContainerHighest: const Color(0xFF262626),
+      onSurface: Colors.white,
+      outlineVariant: const Color(0xFF2A2A2A),
+    );
 
     return ThemeData(
       useMaterial3: true,
       brightness: Brightness.dark,
       colorScheme: colorScheme,
-      scaffoldBackgroundColor: isOledActive ? Colors.black : colorScheme.surface,
+      scaffoldBackgroundColor: Colors.black,
       appBarTheme: AppBarTheme(
-        backgroundColor: isOledActive ? Colors.black : colorScheme.surface,
+        backgroundColor: Colors.black,
         foregroundColor: colorScheme.onSurface,
         elevation: 0,
         scrolledUnderElevation: 2,
@@ -196,17 +193,17 @@ class ThemeProvider with ChangeNotifier {
       cardTheme: CardThemeData(
         elevation: 0,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        color: isOledActive ? const Color(0xFF0D0D0D) : colorScheme.surfaceContainerLow,
+        color: colorScheme.surfaceContainerLow,
         clipBehavior: Clip.antiAlias,
       ),
       navigationBarTheme: NavigationBarThemeData(
         height: 72,
         indicatorColor: colorScheme.secondaryContainer,
         indicatorShape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-        backgroundColor: isOledActive ? Colors.black : colorScheme.surface,
+        backgroundColor: Colors.black,
         labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
       ),
-      textTheme: textTheme,
+      fontFamily: appFontFamily,
     );
   }
 }

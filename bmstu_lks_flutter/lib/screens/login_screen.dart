@@ -6,7 +6,15 @@ import '../widgets/bmstu_neo_logo.dart';
 import '../constants/app_version.dart';
 
 class LoginScreen extends StatefulWidget {
-  const LoginScreen({super.key});
+  /// Opened over the app when the saved session can't be renewed: no guest
+  /// mode (it would sign the student out), and it closes itself on success.
+  final bool isReauth;
+
+  const LoginScreen({super.key, this.isReauth = false});
+
+  static Future<void> showReauth(BuildContext context) => Navigator.of(context).push(
+        MaterialPageRoute(fullscreenDialog: true, builder: (_) => const LoginScreen(isReauth: true)),
+      );
 
   @override
   State<LoginScreen> createState() => _LoginScreenState();
@@ -42,6 +50,10 @@ class _LoginScreenState extends State<LoginScreen> {
 
     final auth = context.read<AuthProvider>();
     final success = await auth.login(username, password, rememberMe: _rememberMe);
+    if (success && widget.isReauth && mounted) {
+      Navigator.of(context).pop();
+      return;
+    }
     if (!success && mounted && auth.errorMessage != null) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -72,6 +84,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
     return Scaffold(
       backgroundColor: theme.colorScheme.surface,
+      appBar: widget.isReauth ? AppBar(title: const Text('Повторный вход в ЛКС')) : null,
       body: SafeArea(
         child: Center(
           child: SingleChildScrollView(
@@ -207,6 +220,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         color: theme.colorScheme.onSurfaceVariant,
                       ),
                       suffixIcon: IconButton(
+                        tooltip: _obscurePassword ? 'Показать пароль' : 'Скрыть пароль',
                         icon: Icon(
                           _obscurePassword ? Icons.visibility_off_outlined : Icons.visibility_outlined,
                           size: 20,
@@ -255,11 +269,18 @@ class _LoginScreenState extends State<LoginScreen> {
                           });
                         },
                       ),
-                      Text(
-                        'Запомнить меня на этом устройстве',
-                        style: TextStyle(
-                          fontSize: 13,
-                          color: theme.colorScheme.onSurfaceVariant,
+                      // Wraps instead of overflowing with a large system font;
+                      // tapping the label toggles the checkbox too
+                      Expanded(
+                        child: GestureDetector(
+                          onTap: () => setState(() => _rememberMe = !_rememberMe),
+                          child: Text(
+                            'Запомнить меня на этом устройстве',
+                            style: TextStyle(
+                              fontSize: 13,
+                              color: theme.colorScheme.onSurfaceVariant,
+                            ),
+                          ),
                         ),
                       ),
                     ],
@@ -294,43 +315,46 @@ class _LoginScreenState extends State<LoginScreen> {
                   ),
                   const SizedBox(height: 16),
 
-                  // Divider
-                  Row(
-                    children: [
-                      Expanded(child: Divider(color: theme.colorScheme.outlineVariant)),
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 16),
-                        child: Text(
-                          'или',
-                          style: TextStyle(
-                            fontSize: 13,
-                            color: theme.colorScheme.onSurfaceVariant,
+                  if (!widget.isReauth) ...[
+                    // Divider
+                    Row(
+                      children: [
+                        Expanded(child: Divider(color: theme.colorScheme.outlineVariant)),
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 16),
+                          child: Text(
+                            'или',
+                            style: TextStyle(
+                              fontSize: 13,
+                              color: theme.colorScheme.onSurfaceVariant,
+                            ),
                           ),
                         ),
-                      ),
-                      Expanded(child: Divider(color: theme.colorScheme.outlineVariant)),
-                    ],
-                  ),
-                  const SizedBox(height: 16),
+                        Expanded(child: Divider(color: theme.colorScheme.outlineVariant)),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
 
-                  // Guest Mode Button
-                  OutlinedButton.icon(
-                    onPressed: auth.isLoading ? null : _handleGuestMode,
-                    icon: const Icon(Icons.calendar_month_rounded, size: 18),
-                    label: const Text(
-                      'Гостевой режим (только расписание)',
-                      style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
-                    ),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: theme.colorScheme.onSurface,
-                      side: BorderSide(
-                        color: theme.colorScheme.outlineVariant,
+                    // Guest Mode Button
+                    OutlinedButton.icon(
+                      onPressed: auth.isLoading ? null : _handleGuestMode,
+                      icon: const Icon(Icons.calendar_month_rounded, size: 18),
+                      label: const Text(
+                        'Гостевой режим (только расписание)',
+                        style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
                       ),
-                      padding: const EdgeInsets.symmetric(vertical: 15),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: theme.colorScheme.onSurface,
+                        side: BorderSide(
+                          color: theme.colorScheme.outlineVariant,
+                        ),
+                        padding: const EdgeInsets.symmetric(vertical: 15),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 24),
+                    const SizedBox(height: 24),
+
+                  ],
 
                   // Security notice
                   Text(

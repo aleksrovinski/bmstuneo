@@ -110,6 +110,7 @@ class TeacherDetailsSheet extends StatelessWidget {
                     ),
                     const Spacer(),
                     IconButton(
+                      tooltip: 'Закрыть',
                       icon: const Icon(Icons.close_rounded),
                       onPressed: () => Navigator.of(context).pop(),
                     ),

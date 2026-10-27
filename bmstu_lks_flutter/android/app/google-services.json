@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "230668975115",
+    "project_id": "bmstuneo",
+    "storage_bucket": "bmstuneo.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:230668975115:android:ab3d390efea63658b3db0e",
+        "android_client_info": {
+          "package_name": "ru.bmstu.neo"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyC74Kgbo1sjEh5h5mHSV1dvj9yXSj5vGFQ"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

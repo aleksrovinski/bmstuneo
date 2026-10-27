@@ -50,7 +50,9 @@ class _QrPassDialogState extends State<QrPassDialog> {
       if (mounted) {
         setState(() => _brightnessBoosted = true);
       }
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('[QrPassDialog] Failed to raise screen brightness: $e');
+    }
   }
 
   @override
@@ -62,7 +64,9 @@ class _QrPassDialogState extends State<QrPassDialog> {
   Future<void> _restoreBrightness() async {
     try {
       await ScreenBrightness.instance.resetApplicationScreenBrightness();
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('[QrPassDialog] Failed to restore screen brightness: $e');
+    }
   }
 
   @override
@@ -108,6 +112,7 @@ class _QrPassDialogState extends State<QrPassDialog> {
                   ],
                 ),
                 IconButton(
+                  tooltip: 'Закрыть',
                   icon: const Icon(Icons.close, size: 20),
                   onPressed: () => Navigator.of(context).pop(),
                   color: theme.colorScheme.onSurfaceVariant,

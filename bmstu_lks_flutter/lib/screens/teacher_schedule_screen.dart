@@ -103,7 +103,9 @@ class _TeacherScheduleScreenState extends State<TeacherScheduleScreen> {
               .toList();
         });
       }
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('[TeacherSchedule] Failed to load cached teacher schedule: $e');
+    }
     await _fetchSchedule();
   }
 
@@ -230,7 +232,9 @@ class _TeacherScheduleScreenState extends State<TeacherScheduleScreen> {
             });
           }
         }
-      } catch (_) {}
+      } catch (e) {
+        debugPrint('[TeacherSchedule] Corrupted teacher schedule cache ignored: $e');
+      }
     }
 
     setState(() {
@@ -254,7 +258,9 @@ class _TeacherScheduleScreenState extends State<TeacherScheduleScreen> {
           final prefs = await SharedPreferences.getInstance();
           final jsonString = jsonEncode(fetched.map((l) => l.toJson()).toList());
           await prefs.setString('teacher_sched_${_currentUuid!}', jsonString);
-        } catch (_) {}
+        } catch (e) {
+          debugPrint('[TeacherSchedule] Failed to cache teacher schedule: $e');
+        }
       }
     } on BmstuAuthException catch (_) {
       if (!isRetry && mounted) {
@@ -284,7 +290,9 @@ class _TeacherScheduleScreenState extends State<TeacherScheduleScreen> {
                   .map((e) => ScheduleLesson.fromJson(e as Map<String, dynamic>))
                   .toList();
             }
-          } catch (_) {}
+          } catch (e) {
+            debugPrint('[TeacherSchedule] Corrupted teacher schedule cache ignored: $e');
+          }
         }
         setState(() {
           _isLoading = false;
@@ -443,6 +451,7 @@ class _TeacherScheduleScreenState extends State<TeacherScheduleScreen> {
                   prefixIcon: const Icon(Icons.search_rounded),
                   suffixIcon: _searchController.text.isNotEmpty
                       ? IconButton(
+                          tooltip: 'Очистить поиск',
                           icon: const Icon(Icons.clear_rounded),
                           onPressed: () {
                             _searchController.clear();

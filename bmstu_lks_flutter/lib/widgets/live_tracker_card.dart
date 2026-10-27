@@ -122,6 +122,8 @@ class _LiveTrackerCardState extends State<LiveTrackerCard> {
                         style: TextStyle(
                           fontSize: 14,
                           fontWeight: FontWeight.w800,
+                          // Fixed-width digits: the countdown ticks every second without jitter
+                          fontFeatures: const [FontFeature.tabularFigures()],
                           color: isInProgress
                               ? theme.colorScheme.onPrimaryContainer
                               : theme.colorScheme.onSurface,

@@ -63,6 +63,19 @@ class SemesterSession {
     this.lastUpdated,
   });
 
+  int get passedCount => disciplines.where((d) => d.isPassed).length;
+  int get debtCount => disciplines.where((d) => d.isDebt).length;
+
+  /// Mean of graded exams (5/4/3); pass/fail credits don't count. Null if none.
+  double? get averageGrade {
+    final grades = disciplines
+        .map((d) => d.isExcellent ? 5 : d.isGood ? 4 : d.isSatisfactory ? 3 : null)
+        .whereType<int>()
+        .toList();
+    if (grades.isEmpty) return null;
+    return grades.reduce((a, b) => a + b) / grades.length;
+  }
+
   Map<String, dynamic> toJson() => {
         'semesterTitle': semesterTitle,
         'semesterNumber': semesterNumber,

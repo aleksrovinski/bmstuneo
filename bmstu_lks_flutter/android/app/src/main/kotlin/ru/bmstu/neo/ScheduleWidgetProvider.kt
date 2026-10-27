@@ -38,6 +38,21 @@ class ScheduleWidgetProvider : AppWidgetProvider() {
         const val KEY_SCHEDULE_JSON = "widget_schedule_data"
         const val ACTION_REFRESH_WIDGET = "ru.bmstu.neo.REFRESH_WIDGET"
 
+        // Snapshot stored by the Dart background sync (silent push / periodic check). It runs
+        // in its own Flutter engine without MainActivity's channel, so it writes here instead.
+        private const val FLUTTER_PREFS = "FlutterSharedPreferences"
+        private const val KEY_BACKGROUND_JSON = "flutter.widget_schedule_json_v1"
+
+        /** The newer of the snapshot the open app sent and the one a background sync stored. */
+        fun latestScheduleJson(context: Context): String? {
+            val sent = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).getString(KEY_SCHEDULE_JSON, null)
+            val background = context.getSharedPreferences(FLUTTER_PREFS, Context.MODE_PRIVATE).getString(KEY_BACKGROUND_JSON, null)
+            return listOfNotNull(sent, background).maxByOrNull { generatedAt(it) }
+        }
+
+        private fun generatedAt(json: String): Long =
+            try { JSONObject(json).optLong("generatedAt", 0L) } catch (e: Exception) { -1L }
+
         fun updateAllWidgets(context: Context) {
             try {
                 val appWidgetManager = AppWidgetManager.getInstance(context)
@@ -58,8 +73,7 @@ class ScheduleWidgetProvider : AppWidgetProvider() {
             appWidgetId: Int
         ) {
             val views = RemoteViews(context.packageName, R.layout.schedule_widget)
-            val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-            val rawJson = prefs.getString(KEY_SCHEDULE_JSON, null)
+            val rawJson = latestScheduleJson(context)
 
             // Setup PendingIntent to launch app when clicking anywhere on the widget
             val appIntent = Intent(context, MainActivity::class.java).apply {

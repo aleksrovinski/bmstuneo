@@ -38,26 +38,15 @@ class _HomeHeroCardState extends State<HomeHeroCard> {
     super.dispose();
   }
 
-  String _getBaumanGreeting(String studentName) {
-    final hour = DateTime.now().hour;
-    final name = studentName.isNotEmpty ? ', $studentName' : ', Бауманец';
+  String _getBaumanGreeting(String studentName) =>
+      HomeGreetings.forTime(DateTime.now(), studentName);
 
-    if (hour >= 6 && hour < 12) {
-      return 'Доброе утро$name! ☕\nКофе выпит, гранит науки ждёт!';
-    } else if (hour >= 12 && hour < 18) {
-      return 'Здравствуй$name! 🚀\nДержи хвост пистолетом, а лабы сданными!';
-    } else if (hour >= 18 && hour < 23) {
-      return 'Добрый вечер$name! 📚\nВремя закрывать хвосты и готовиться к РК!';
-    } else {
-      return 'Ночь в Бауманке$name... 🌙\nСлава роботам и крепким нервам!';
-    }
-  }
+  static const _weekdaysShort = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
-    final isIOS = theme.platform == TargetPlatform.iOS;
 
     final auth = context.watch<AuthProvider>();
     final sched = context.watch<ScheduleProvider>();
@@ -65,15 +54,10 @@ class _HomeHeroCardState extends State<HomeHeroCard> {
     final user = auth.userProfile;
     final status = sched.getLivePairStatus();
     final todayLessons = sched.lessonsForToday;
-    final currentWeek = sched.currentWeek;
-    final currentWeekNum = currentWeek?.weekNumber ?? 1;
-    final isNumerator = currentWeek?.isNumerator ?? true;
 
-    final hasQrPass = auth.isFullAuth &&
-        user?.qrUrl != null &&
-        user!.qrUrl!.isNotEmpty;
-
+    final hasQrPass = auth.isFullAuth && user?.qrUrl != null && user!.qrUrl!.isNotEmpty;
     final isInProgress = status.type == LivePairType.inProgress;
+    final lesson = isInProgress ? status.currentLesson : status.nextLesson;
 
     IconData statusIcon;
     switch (status.type) {
@@ -92,180 +76,137 @@ class _HomeHeroCardState extends State<HomeHeroCard> {
         break;
     }
 
-    final cardContent = Container(
-      padding: const EdgeInsets.all(18),
+    // A countdown over days is noise; the day and time below say it better
+    var headline = status.headline;
+    String? when;
+    if (lesson != null) {
+      if (isInProgress) {
+        when = 'до ${lesson.endTime}';
+      } else if (lesson.day != DateTime.now().weekday) {
+        when = '${_weekdaysShort[(lesson.day - 1).clamp(0, 6)]}, ${lesson.startTime}';
+        headline = 'Следующая пара';
+      } else {
+        when = 'в ${lesson.startTime}';
+      }
+    }
+
+    final onCard = Colors.white;
+    final dim = Colors.white.withValues(alpha: 0.85);
+    final greeting = _getBaumanGreeting(user?.firstName ?? '').split('\n');
+
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      padding: const EdgeInsets.fromLTRB(14, 12, 14, 10),
       decoration: BoxDecoration(
-        gradient: isDark
-            ? LinearGradient(
-                colors: [
-                  theme.colorScheme.surfaceContainerHigh,
-                  theme.colorScheme.surfaceContainer,
-                ],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              )
-            : LinearGradient(
-                colors: [
-                  theme.colorScheme.primary,
-                  theme.colorScheme.primary.withValues(alpha: 0.85),
-                ],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
-        borderRadius: BorderRadius.circular(26),
-        border: isIOS
-            ? Border.all(
-                color: isDark
-                    ? Colors.white.withValues(alpha: 0.16)
-                    : Colors.white.withValues(alpha: 0.35),
-                width: 1,
-              )
-            : null,
-        boxShadow: [
-          BoxShadow(
-            color: isDark
-                ? Colors.black.withValues(alpha: 0.3)
-                : theme.colorScheme.primary.withValues(alpha: 0.28),
-            blurRadius: 18,
-            offset: const Offset(0, 6),
-          ),
-        ],
+        color: isDark ? theme.colorScheme.surfaceContainerHigh : theme.colorScheme.primary,
+        borderRadius: BorderRadius.circular(24),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Row 1: Greeting + Compact Pass Button
+          // Greeting + pass
           Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Expanded(
-                child: Text(
-                  _getBaumanGreeting(user?.firstName ?? ''),
-                  style: const TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w700,
-                    color: Colors.white,
-                    height: 1.32,
-                  ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      greeting.first,
+                      style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: onCard),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    if (greeting.length > 1)
+                      Text(
+                        greeting[1],
+                        style: TextStyle(fontSize: 12, color: dim),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                  ],
                 ),
               ),
-              const SizedBox(width: 8),
               if (hasQrPass) ...[
-                Material(
-                  color: Colors.transparent,
-                  child: InkWell(
-                    onTap: () => QrPassDialog.show(
-                      context,
-                      qrUrl: user.qrUrl!,
-                      studentName: user.fullName,
-                      groupTitle: user.groupTitle,
-                    ),
-                    borderRadius: BorderRadius.circular(16),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 10, vertical: 6),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.2),
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(
-                          color: Colors.white.withValues(alpha: 0.38),
-                          width: 1.0,
-                        ),
-                      ),
-                      child: const Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(
-                            Icons.qr_code_2_rounded,
-                            size: 16,
-                            color: Colors.white,
-                          ),
-                          SizedBox(width: 4),
-                          Text(
-                            'Пропуск',
-                            style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w700,
-                              color: Colors.white,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
+                const SizedBox(width: 8),
+                IconButton.filledTonal(
+                  onPressed: () => QrPassDialog.show(
+                    context,
+                    qrUrl: user.qrUrl!,
+                    studentName: user.fullName,
+                    groupTitle: user.groupTitle,
                   ),
+                  tooltip: 'Пропуск',
+                  style: IconButton.styleFrom(
+                    backgroundColor: Colors.white.withValues(alpha: 0.2),
+                    foregroundColor: onCard,
+                  ),
+                  icon: const Icon(Icons.qr_code_2_rounded, size: 22),
                 ),
               ],
             ],
           ),
+          const SizedBox(height: 10),
 
-          const SizedBox(height: 14),
-
-          // Row 2: Unified Next/Live Lesson status block (Tap opens Live Activity settings)
+          // Current or next pair: what, where, until when (tap → Live Update settings)
           Material(
-            color: Colors.transparent,
+            color: Colors.white.withValues(alpha: isDark ? 0.08 : 0.16),
+            borderRadius: BorderRadius.circular(16),
             child: InkWell(
               onTap: () => LiveActivitySettingsSheet.show(context),
-              borderRadius: BorderRadius.circular(18),
-              child: Container(
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 14, vertical: 11),
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: isDark ? 0.12 : 0.16),
-                  borderRadius: BorderRadius.circular(18),
-                  border: Border.all(
-                    color: Colors.white.withValues(alpha: 0.22),
-                    width: 1,
-                  ),
-                ),
+              borderRadius: BorderRadius.circular(16),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
                 child: Row(
                   children: [
-                    Container(
-                      width: 38,
-                      height: 38,
-                      decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: isInProgress ? 0.28 : 0.18),
-                        shape: BoxShape.circle,
-                      ),
-                      child: Center(
-                        child: Icon(
-                          statusIcon,
-                          color: Colors.white,
-                          size: 20,
-                        ),
-                      ),
-                    ),
+                    Icon(statusIcon, color: onCard, size: 26),
                     const SizedBox(width: 12),
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            status.headline,
-                            style: const TextStyle(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w800,
-                              color: Colors.white,
-                              letterSpacing: -0.1,
+                            headline,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 12.5,
+                              fontWeight: FontWeight.w700,
+                              color: dim,
+                              // Fixed-width digits: the countdown ticks every second without jitter
+                              fontFeatures: const [FontFeature.tabularFigures()],
                             ),
                           ),
                           const SizedBox(height: 2),
                           Text(
-                            status.subline,
-                            style: TextStyle(
-                              fontSize: 11.5,
-                              color: Colors.white.withValues(alpha: 0.88),
-                              fontWeight: FontWeight.w500,
-                            ),
-                            maxLines: 1,
+                            lesson?.disciplineTitle ?? status.subline,
+                            style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: onCard, height: 1.2),
+                            maxLines: 2,
                             overflow: TextOverflow.ellipsis,
                           ),
+                          if (lesson != null) ...[
+                            const SizedBox(height: 4),
+                            Row(
+                              children: [
+                                Icon(Icons.location_on_rounded, size: 14, color: onCard),
+                                const SizedBox(width: 3),
+                                Flexible(
+                                  child: Text(
+                                    lesson.displayAudiences,
+                                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: onCard),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                                const SizedBox(width: 10),
+                                Icon(Icons.schedule_rounded, size: 14, color: dim),
+                                const SizedBox(width: 3),
+                                Text(when!, style: TextStyle(fontSize: 12.5, color: dim)),
+                              ],
+                            ),
+                          ],
                         ],
                       ),
-                    ),
-                    Icon(
-                      Icons.tune_rounded,
-                      size: 18,
-                      color: Colors.white.withValues(alpha: 0.75),
                     ),
                   ],
                 ),
@@ -273,55 +214,94 @@ class _HomeHeroCardState extends State<HomeHeroCard> {
             ),
           ),
 
-          const SizedBox(height: 12),
-
-          // Row 3: Footer with day stats & quick link
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                'Сегодня: ${todayLessons.length} пар(ы) • $currentWeekNum нед (${isNumerator ? "Числ" : "Знам"})',
-                style: TextStyle(
-                  fontSize: 11.5,
-                  fontWeight: FontWeight.w600,
-                  color: Colors.white.withValues(alpha: 0.85),
-                ),
-              ),
-              InkWell(
-                onTap: widget.onOpenSchedule,
-                borderRadius: BorderRadius.circular(8),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        'Все пары',
-                        style: TextStyle(
-                          fontSize: 11.5,
-                          fontWeight: FontWeight.w700,
-                          color: Colors.white.withValues(alpha: 0.95),
-                        ),
-                      ),
-                      const SizedBox(width: 2),
-                      Icon(
-                        Icons.chevron_right_rounded,
-                        size: 16,
-                        color: Colors.white.withValues(alpha: 0.95),
-                      ),
-                    ],
+          // Footer: today at a glance + link to the schedule
+          InkWell(
+            onTap: widget.onOpenSchedule,
+            borderRadius: BorderRadius.circular(8),
+            child: Padding(
+              padding: const EdgeInsets.only(top: 8, bottom: 2),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      todayLessons.isEmpty ? 'Сегодня пар нет' : 'Сегодня пар: ${todayLessons.length}',
+                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: dim),
+                    ),
                   ),
-                ),
+                  Text('Расписание', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: onCard)),
+                  Icon(Icons.chevron_right_rounded, size: 16, color: onCard),
+                ],
               ),
-            ],
+            ),
           ),
         ],
       ),
     );
+  }
+}
 
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-      child: cardContent,
-    );
+/// Greeting on the home hero card: a pool of phrases per part of the day.
+///
+/// The phrase is picked from the date, not at random: the card rebuilds every
+/// second for the countdown, so it must stay the same within a part of the day
+/// and change from one day to the next.
+class HomeGreetings {
+  static const _morning = [
+    ('Доброе утро', '☕', 'Кофе выпит, гранит науки ждёт!'),
+    ('Доброе утро', '🌅', 'Первая пара сама себя не посетит.'),
+    ('С добрым утром', '🎒', 'Пропуск, конспект, зарядка — проверь всё.'),
+    ('Доброе утро', '⚙️', 'Сегодня отличный день, чтобы сдать лабу.'),
+    ('Подъём', '⏰', 'До ГУКа ещё надо доехать — не тяни.'),
+  ];
+  static const _day = [
+    ('Привет', '🚀', 'Держи хвост пистолетом, а лабы — сданными!'),
+    ('Привет', '🧮', 'Половина дня позади, половина формул впереди.'),
+    ('Здравствуй', '🍜', 'Не забудь пообедать между парами.'),
+    ('Привет', '📐', 'Чертёж сам себя не начертит.'),
+    ('Хорошего дня', '💡', 'Задай вопрос на семинаре — это засчитывается.'),
+  ];
+  static const _evening = [
+    ('Добрый вечер', '📚', 'Время закрывать хвосты и готовиться к РК!'),
+    ('Добрый вечер', '📝', 'Самое время разобрать сегодняшний конспект.'),
+    ('Добрый вечер', '🧪', 'Отчёт по лабе лучше написать сегодня, чем в ночь перед сдачей.'),
+    ('Вечер добрый', '🎧', 'Пары закончились — можно и выдохнуть.'),
+    ('Добрый вечер', '🗓', 'Загляни в расписание на завтра, чтобы утром не бежать.'),
+  ];
+  static const _night = [
+    ('Ночь в Бауманке', '🌙', 'Слава роботам и крепким нервам!'),
+    ('Доброй ночи', '😴', 'Сон тоже входит в подготовку к экзамену.'),
+    ('Доброй ночи', '🦉', 'Курсовая подождёт до утра. Наверное.'),
+    ('Глубокая ночь', '✨', 'Закрывай ноутбук — завтра первая пара.'),
+  ];
+  static const _weekend = [
+    ('Хороших выходных', '🛋', 'Отдыхай, а дедлайны подождут до понедельника.'),
+    ('Хороших выходных', '🌿', 'Самое время доделать то, что копилось всю неделю.'),
+    ('Привет', '🎮', 'Заслуженный отдых — тоже часть учёбы.'),
+    ('Привет', '☀️', 'В выходные пар нет, а ДЗ — есть. Но можно и погулять.'),
+  ];
+
+  static String forTime(DateTime now, String studentName) {
+    final name = studentName.isNotEmpty ? ', $studentName' : '';
+    final hour = now.hour;
+    final isNight = hour >= 23 || hour < 6;
+    final isWeekend = now.weekday == DateTime.saturday || now.weekday == DateTime.sunday;
+
+    final List<(String, String, String)> pool;
+    if (isNight) {
+      pool = _night;
+    } else if (isWeekend) {
+      pool = _weekend;
+    } else if (hour < 12) {
+      pool = _morning;
+    } else if (hour < 18) {
+      pool = _day;
+    } else {
+      pool = _evening;
+    }
+
+    final dayIndex = DateTime.utc(now.year, now.month, now.day).millisecondsSinceEpoch ~/
+        Duration.millisecondsPerDay;
+    final (hello, emoji, line) = pool[dayIndex % pool.length];
+    return '$hello$name! $emoji\n$line';
   }
 }

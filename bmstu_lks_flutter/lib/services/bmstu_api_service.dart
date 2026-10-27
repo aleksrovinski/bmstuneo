@@ -88,7 +88,8 @@ class BmstuApiService {
   // interceptor, so a 401 during login fails the login instead of waiting on itself.
   final Dio _authDio = Dio(_baseOptions());
 
-  final CookieJar cookieJar = CookieJar();
+  /// In-memory by default (tests); the app passes a jar persisted in secure storage.
+  final CookieJar cookieJar;
   Dio get dio => _dio;
   bool _isAuthenticated = false;
   String? _lastStageUuid;
@@ -96,9 +97,9 @@ class BmstuApiService {
   Future<bool> Function()? onSilentRelogin;
   Future<bool>? _reloginInFlight;
 
-  BmstuApiService() {
-    _authDio.interceptors.add(CookieManager(cookieJar));
-    _dio.interceptors.add(CookieManager(cookieJar));
+  BmstuApiService({CookieJar? cookieJar}) : cookieJar = cookieJar ?? CookieJar() {
+    _authDio.interceptors.add(CookieManager(this.cookieJar));
+    _dio.interceptors.add(CookieManager(this.cookieJar));
     _dio.interceptors.add(
       InterceptorsWrapper(
         onError: (DioException err, handler) async {
@@ -165,6 +166,38 @@ class BmstuApiService {
 
   bool get isAuthenticated => _isAuthenticated;
 
+  /// Checks whether the saved session cookies are still valid, without the password.
+  /// Returns the fresh profile, or null when LKS wants a new login.
+  /// Network failures are thrown as [BmstuNetworkException].
+  Future<UserProfile?> restoreSession() async {
+    try {
+      final profile = await fetchUserProfile();
+      _isAuthenticated = profile != null;
+      return profile;
+    } on DioException catch (e) {
+      _isAuthenticated = false;
+      final code = e.response?.statusCode;
+      if (code == 401 || code == 403) return null;
+      throw BmstuNetworkException.fromDio(e);
+    }
+  }
+
+  Future<UserProfile?> _profileIfSignedIn() async {
+    final profile = await fetchUserProfile();
+    if (profile != null) _isAuthenticated = true;
+    return profile;
+  }
+
+  /// Forgets the LKS session (logout, switching to guest mode).
+  Future<void> clearSession() async {
+    _isAuthenticated = false;
+    try {
+      await cookieJar.deleteAll();
+    } catch (e) {
+      debugPrint('[BmstuApiService] Failed to clear session cookies: $e');
+    }
+  }
+
   // Real-time Keycloak SSO Login
   Future<UserProfile?> login(String username, String password) async {
     try {
@@ -185,6 +218,9 @@ class BmstuApiService {
       }
 
       if (ssoUrl.isEmpty || !ssoUrl.contains('sso.bmstu.ru')) {
+        // LKS didn't send us to SSO: the saved session is still valid
+        final current = await _profileIfSignedIn();
+        if (current != null) return current;
         throw Exception('Не удалось подключиться к серверу авторизации МГТУ');
       }
 
@@ -193,6 +229,11 @@ class BmstuApiService {
       final ssoHtml = ssoPageResp.data ?? '';
 
       final actionUrl = extractLoginFormAction(ssoHtml, ssoPageResp.realUri);
+      if (actionUrl == null && ssoPageResp.realUri.host != 'sso.bmstu.ru') {
+        // SSO remembered the student and redirected straight back to LKS, no form shown
+        final current = await _profileIfSignedIn();
+        if (current != null) return current;
+      }
       if (actionUrl == null) {
         throw Exception('Страница входа МГТУ изменилась, вход через приложение временно недоступен');
       }
@@ -297,7 +338,9 @@ class BmstuApiService {
         final qrData = qrResp.data is Map ? qrResp.data : null;
         final q = qrData?['data'] ?? qrData;
         qrUrl = q?['qr'] as String?;
-      } catch (_) {}
+      } catch (e) {
+        debugPrint('[BmstuApiService] Student QR unavailable: $e');
+      }
 
       final semester = (group['semester'] as num?)?.toInt() ?? 1;
       final dormitory = p['dormitory']?.toString() == 'dormitory.true' ||
@@ -322,7 +365,9 @@ class BmstuApiService {
             }
           }
         }
-      } catch (_) {}
+      } catch (e) {
+        debugPrint('[BmstuApiService] Student photo endpoint unavailable: $e');
+      }
 
       // 2. Scrape student photo from https://lks.bmstu.ru/profile (_img_1rxc3_40 _visible_1rxc3_45)
       if (photoUrl == null || photoUrl.isEmpty) {
@@ -334,7 +379,9 @@ class BmstuApiService {
               photoUrl = scrapedPhoto;
             }
           }
-        } catch (_) {}
+        } catch (e) {
+          debugPrint('[BmstuApiService] Profile page photo unavailable: $e');
+        }
       }
 
       // 3. Fallback to person/student API fields
@@ -405,7 +452,9 @@ class BmstuApiService {
           return CurrentWeek.fromJson(data);
         }
       }
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('[BmstuApiService] Failed to load current week: $e');
+    }
     return fallbackToDefault ? CurrentWeek.defaultWeek() : null;
   }
 
@@ -502,7 +551,9 @@ class BmstuApiService {
             return normalizeSchedule(sched);
           }
         }
-      } catch (_) {}
+      } catch (e) {
+        debugPrint('[BmstuApiService] Private schedule failed, using public one: $e');
+      }
     }
 
     // 2. Try public endpoint
@@ -540,7 +591,8 @@ class BmstuApiService {
       if (dioErr.response?.statusCode == 401 || dioErr.response?.statusCode == 403) {
         throw BmstuAuthException('Сессия устарела или требуется авторизация в ЛКС');
       }
-    } catch (_) {}
+      throw BmstuNetworkException.fromDio(dioErr);
+    }
 
     return [];
   }
@@ -656,34 +708,23 @@ class BmstuApiService {
           return PhysicalCultureData.fromJson(data);
         }
       }
-    } catch (_) {}
+    } on DioException catch (e) {
+      throw BmstuNetworkException.fromDio(e);
+    }
     return null;
   }
 
-  // Online search for groups
-  Future<List<GroupItem>> searchGroupsOnline(String query) async {
-    if (query.trim().isEmpty) return BmstuGroupsCatalog.popularGroups;
-    try {
-      final resp = await _dio.get(
-        '$apiBase/schedules/search',
-        queryParameters: {'s': query.trim()},
-      );
-      if (resp.statusCode == 200 && resp.data is List) {
-        final list = resp.data as List;
-        final results = <GroupItem>[];
-        for (final item in list) {
-          if (item is Map && item['type'] == 'group') {
-            results.add(GroupItem(
-              title: item['title']?.toString() ?? '',
-              uuid: item['uuid']?.toString() ?? '',
-            ));
-          }
-        }
-        if (results.isNotEmpty) return results;
-      }
-    } catch (_) {}
-    // Fallback to local 3401 catalog
-    return BmstuGroupsCatalog.search(query);
+  // Full list of study groups from the public university structure (no auth needed).
+  // About 700 KB, so it gets a longer timeout and is cached by GroupsCatalogSync.
+  Future<List<GroupItem>> fetchGroupsCatalog() async {
+    final resp = await _dio.get(
+      '$apiBase/structure',
+      options: Options(receiveTimeout: const Duration(seconds: 40)),
+    );
+    if (resp.statusCode == 200 && resp.data is Map<String, dynamic>) {
+      return BmstuGroupsCatalog.parseStructure(resp.data as Map<String, dynamic>);
+    }
+    return [];
   }
 
   // Online search for teachers
@@ -716,7 +757,8 @@ class BmstuApiService {
       if (dioErr.response?.statusCode == 401 || dioErr.response?.statusCode == 403) {
         throw BmstuAuthException('Для поиска преподавателей требуется авторизация в ЛКС');
       }
-    } catch (_) {}
+      throw BmstuNetworkException.fromDio(dioErr);
+    }
     return [];
   }
 
@@ -972,11 +1014,16 @@ class BmstuApiService {
             // Trigger background refresh if authenticated
             if (_isAuthenticated) {
               _fetchAndCacheSessionResults(prefs, cacheKey, stageUuid: targetStage)
-                  .catchError((_) => <SemesterSession>[]);
+                  .catchError((Object e) {
+                debugPrint('[BmstuApiService] Background session refresh failed: $e');
+                return <SemesterSession>[];
+              });
             }
             return cachedList;
           }
-        } catch (_) {}
+        } catch (e) {
+          debugPrint('[BmstuApiService] Corrupted session cache ignored: $e');
+        }
       }
     }
 
@@ -994,7 +1041,9 @@ class BmstuApiService {
               .whereType<Map<String, dynamic>>()
               .map((s) => SemesterSession.fromJson(s))
               .toList();
-        } catch (_) {}
+        } catch (cacheErr) {
+          debugPrint('[BmstuApiService] Corrupted session cache ignored: $cacheErr');
+        }
       }
       rethrow;
     }
@@ -1008,6 +1057,9 @@ class BmstuApiService {
     String? stageUuid,
   }) async {
     var targetStage = (stageUuid != null && stageUuid.isNotEmpty) ? stageUuid : _lastStageUuid;
+    // If every source fails, the caller must get the error (and fall back to cache),
+    // not an empty list that looks like "no session results"
+    Object? lastError;
 
     // Resolve stageUuid from $apiBase/student if not known
     if ((targetStage == null || targetStage.isEmpty) && _isAuthenticated) {
@@ -1021,7 +1073,9 @@ class BmstuApiService {
             _lastStageUuid = targetStage;
           }
         }
-      } catch (_) {}
+      } catch (e) {
+        lastError = e;
+      }
     }
 
     // 1. Primary official JSON API endpoint
@@ -1036,13 +1090,18 @@ class BmstuApiService {
             return sessions;
           }
         }
-      } catch (_) {}
+      } catch (e) {
+        debugPrint('[BmstuApiService] Sessions API failed, trying the LKS page: $e');
+        lastError = e;
+      }
     }
 
     // 2. Fallback to HTML scraping
     try {
       final resp = await _dio.get('https://lks.bmstu.ru/session');
       if (resp.statusCode == 200 && resp.data != null) {
+        // LKS answered: an empty page means "no results yet", not a failure
+        lastError = null;
         final html = resp.data.toString();
         final sessions = parseSessionHtml(html);
         if (sessions.isNotEmpty) {
@@ -1051,8 +1110,12 @@ class BmstuApiService {
           return sessions;
         }
       }
-    } catch (_) {}
+    } catch (e) {
+      lastError = e;
+    }
 
+    if (lastError is DioException) throw BmstuNetworkException.fromDio(lastError);
+    if (lastError != null) throw lastError;
     return [];
   }
 }

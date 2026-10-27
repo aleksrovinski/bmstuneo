@@ -5,6 +5,7 @@ plugins {
     id("com.android.application")
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id("dev.flutter.flutter-gradle-plugin")
+    id("com.google.gms.google-services")
 }
 
 // Release signing comes from android/key.properties (see key.properties.example) or,
@@ -32,6 +33,8 @@ android {
     ndkVersion = flutter.ndkVersion
 
     compileOptions {
+        // Required by flutter_local_notifications (java.time on older Android)
+        isCoreLibraryDesugaringEnabled = true
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
@@ -93,4 +96,15 @@ kotlin {
 
 flutter {
     source = "../.."
+}
+
+dependencies {
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
+    // Silent pushes only; no Analytics or other Firebase products
+    implementation(platform("com.google.firebase:firebase-bom:35.1.0"))
+    implementation("com.google.firebase:firebase-messaging")
+    // Same version as the workmanager plugin, whose BackgroundWorker runs the Dart sync
+    implementation("androidx.work:work-runtime-ktx:2.11.2")
+    // NotificationCompat.ProgressStyle and promoted ongoing (Live Update) notifications
+    implementation("androidx.core:core-ktx:1.17.0")
 }
