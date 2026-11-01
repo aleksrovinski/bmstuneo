@@ -8,8 +8,12 @@ import '../providers/progress_provider.dart';
 import '../providers/theme_provider.dart';
 import '../services/widget_sync_service.dart';
 import '../services/cache_service.dart';
+import '../constants/app_mode.dart';
 import '../constants/app_version.dart';
+import '../services/app_update.dart';
+import '../widgets/app_update_dialog.dart';
 import '../widgets/bmstu_neo_logo.dart';
+import '../widgets/group_picker_sheet.dart';
 import '../widgets/live_activity_settings_sheet.dart';
 import '../widgets/notification_settings_card.dart';
 
@@ -70,6 +74,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
   }
 
+  Future<void> _pickPrimaryGroup() async {
+    final auth = context.read<AuthProvider>();
+    final group = await GroupPickerSheet.show(context, currentGroupTitle: auth.currentGroupTitle);
+    if (group != null) await auth.setPrimaryGroup(group);
+  }
+
   Future<void> _addWidget() async {
     final sched = context.read<ScheduleProvider>();
     await WidgetSyncService.updateScheduleWidget(scheduleProvider: sched);
@@ -104,14 +114,31 @@ class _SettingsScreenState extends State<SettingsScreen> {
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 4, 16, 32),
         children: [
+          const _SectionTitle('Основная группа'),
+          _Group(children: [
+            ListTile(
+              leading: const Icon(Icons.groups_rounded),
+              title: Text(auth.currentGroupTitle),
+              subtitle: Text(auth.hasPrimaryOverride
+                  ? 'Выбрана вручную · своя группа ${auth.ownGroupTitle}'
+                  : (auth.isGuest ? 'Главная, виджет и уведомления — по этой группе' : 'Своя группа из ЛКС')),
+              trailing: const Icon(Icons.chevron_right_rounded),
+              onTap: _pickPrimaryGroup,
+            ),
+            if (auth.hasPrimaryOverride)
+              ListTile(
+                leading: const Icon(Icons.undo_rounded),
+                title: Text('Вернуть свою группу (${auth.ownGroupTitle})'),
+                onTap: () => auth.setPrimaryGroup(null),
+              ),
+          ]),
+
           const _SectionTitle('Оформление'),
           _Group(children: [_buildThemeTile(context, themeProv)]),
 
           const _SectionTitle('Уведомления и виджет'),
-          if (auth.isFullAuth) ...[
-            const NotificationSettingsCard(),
-            const SizedBox(height: 8),
-          ],
+          // Hides itself when there is nothing to notify about (guest without mail, demo)
+          const NotificationSettingsCard(),
           _Group(children: [
             ListTile(
               leading: const Icon(Icons.timelapse_rounded),
@@ -167,8 +194,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ListTile(
               leading: const BmstuNeoLogo(size: 32),
               title: Text('${AppVersion.appName} ${AppVersion.displayVersion}'),
-              subtitle: const Text('Неофициальный клиент ЛКС МГТУ им. Н.Э. Баумана'),
+              subtitle: Text(AppMode.isDemo
+                  ? 'Демо-версия: данные вымышленные, ЛКС не используется'
+                  : 'Неофициальный клиент ЛКС МГТУ им. Н.Э. Баумана'),
             ),
+            if (AppUpdater.isSupported)
+              ListTile(
+                leading: const Icon(Icons.system_update_rounded),
+                title: const Text('Проверить обновления'),
+                onTap: () => AppUpdateDialog.checkNow(context),
+              ),
           ]),
         ],
       ),

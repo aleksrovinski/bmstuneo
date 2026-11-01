@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../models/schedule_lesson.dart';
 import '../providers/auth_provider.dart';
 import '../providers/schedule_provider.dart';
+import '../services/bmstu_groups_catalog.dart';
 import '../widgets/pair_card.dart';
 import '../widgets/group_picker_sheet.dart';
 import '../widgets/add_custom_lesson_sheet.dart';
@@ -29,6 +30,9 @@ class ScheduleScreen extends StatefulWidget {
 class _ScheduleScreenState extends State<ScheduleScreen> {
   late final PageController _dayPageController;
 
+  /// Another group the student is looking at; the primary group stays as it is.
+  ScheduleProvider? _browse;
+
   @override
   void initState() {
     super.initState();
@@ -40,7 +44,20 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
   @override
   void dispose() {
     _dayPageController.dispose();
+    _browse?.dispose();
     super.dispose();
+  }
+
+  void _onBrowseChanged() {
+    if (mounted) setState(() {});
+  }
+
+  void _stopBrowsing() {
+    final browse = _browse;
+    if (browse == null) return;
+    setState(() => _browse = null);
+    browse.removeListener(_onBrowseChanged);
+    browse.dispose();
   }
 
   Future<void> _openAddCustomLesson(BuildContext context) async {
@@ -97,14 +114,29 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
     }
   }
 
+  /// Opens another group for viewing only: home, widget and notifications keep
+  /// following the primary group (changed in settings or with «Сделать основной»).
   void _pickGroup(BuildContext context, String currentGroupTitle) {
     final auth = context.read<AuthProvider>();
-    final sched = context.read<ScheduleProvider>();
+    final primary = context.read<ScheduleProvider>();
     GroupPickerSheet.show(context, currentGroupTitle: currentGroupTitle).then((group) {
-      if (group == null) return;
-      if (auth.isGuest) auth.setGuestGroup(group.title, group.uuid);
-      sched.switchGroup(group);
+      if (group == null || !mounted) return;
+      _stopBrowsing();
+      if (group.uuid == auth.currentGroupUuid) return;
+      final browse = ScheduleProvider(apiService: primary.apiService, isPrimary: false)
+        ..setSelectedDay(primary.selectedDay)
+        ..setSelectedWeekFilter(primary.selectedWeekFilter)
+        ..addListener(_onBrowseChanged);
+      setState(() => _browse = browse);
+      browse.loadSchedule(groupUuid: group.uuid, groupTitle: group.title);
     });
+  }
+
+  Future<void> _makeBrowsedPrimary() async {
+    final browse = _browse;
+    if (browse == null) return;
+    await context.read<AuthProvider>().setPrimaryGroup(GroupItem(title: browse.currentGroupTitle, uuid: browse.currentGroupUuid));
+    _stopBrowsing();
   }
 
   void _selectDay(ScheduleProvider sched, int index) {
@@ -118,7 +150,9 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
     final scheme = theme.colorScheme;
 
     final auth = context.watch<AuthProvider>();
-    final sched = context.watch<ScheduleProvider>();
+    final primary = context.watch<ScheduleProvider>();
+    final browse = _browse;
+    final sched = browse ?? primary;
 
     final currentGroupTitle = sched.currentGroupTitle.isNotEmpty ? sched.currentGroupTitle : auth.currentGroupTitle;
 
@@ -170,13 +204,42 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
           const SizedBox(width: 4),
         ],
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () => _openAddCustomLesson(context),
-        tooltip: 'Добавить своё занятие',
-        child: const Icon(Icons.add_rounded),
-      ),
+      // Own lessons belong to the primary schedule
+      floatingActionButton: browse != null
+          ? null
+          : FloatingActionButton(
+              onPressed: () => _openAddCustomLesson(context),
+              tooltip: 'Добавить своё занятие',
+              child: const Icon(Icons.add_rounded),
+            ),
       body: Column(
         children: [
+          if (browse != null)
+            Container(
+              margin: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+              padding: const EdgeInsets.fromLTRB(14, 10, 6, 6),
+              decoration: BoxDecoration(
+                color: scheme.secondaryContainer,
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Просмотр группы ${browse.currentGroupTitle}. Главная, виджет и уведомления — '
+                    'по основной группе ${auth.currentGroupTitle}.',
+                    style: TextStyle(fontSize: 12.5, color: scheme.onSecondaryContainer),
+                  ),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      TextButton(onPressed: _makeBrowsedPrimary, child: const Text('Сделать основной')),
+                      TextButton(onPressed: _stopBrowsing, child: Text('К ${auth.currentGroupTitle}')),
+                    ],
+                  ),
+                ],
+              ),
+            ),
           if (sched.syncStatus != null && !sched.syncStatus!.isLive)
             OfflineStatusBanner(
               message: sched.syncStatus?.message,
@@ -301,6 +364,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
                                   final lesson = dayLessons[lessonIdx];
                                   return PairCard(
                                     lesson: lesson,
+                                    date: monday.add(Duration(days: index)),
                                     onDelete: lesson.isCustom ? () => _confirmDeleteLesson(context, lesson) : null,
                                   );
                                 },

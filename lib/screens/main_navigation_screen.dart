@@ -5,6 +5,7 @@ import '../providers/auth_provider.dart';
 import '../providers/schedule_provider.dart';
 import '../providers/progress_provider.dart';
 import '../providers/fv_provider.dart';
+import '../providers/mail_provider.dart';
 import 'home_screen.dart';
 import 'schedule_screen.dart';
 import 'grades_screen.dart';
@@ -12,6 +13,7 @@ import 'fv_screen.dart';
 import 'profile_screen.dart';
 import 'login_screen.dart';
 import '../services/widget_sync_service.dart';
+import '../widgets/app_update_dialog.dart';
 
 class MainNavigationScreen extends StatefulWidget {
   const MainNavigationScreen({super.key});
@@ -47,6 +49,10 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
         WidgetSyncService.updateScheduleWidget(scheduleProvider: sched);
       }
     }
+    // Fresh unread count for the mail badge after the app was in the background
+    if (state == AppLifecycleState.resumed) {
+      context.read<MailProvider?>()?.refreshFolders();
+    }
   }
 
   @override
@@ -56,22 +62,41 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
       _hasInitialLoaded = true;
       _loadedForSession = context.read<AuthProvider>().sessionGeneration;
       _triggerInitialDataLoad();
+      // Android APK from the website: offer a newer build once the first screen is up
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) AppUpdateDialog.maybeShow(context);
+      });
     }
   }
 
-  void _triggerInitialDataLoad() {
-    final auth = context.read<AuthProvider>();
-    final sched = context.read<ScheduleProvider>();
-    final prog = context.read<ProgressProvider>();
-    final fv = context.read<FvProvider>();
+  String? _loadedGroupUuid;
 
-    // Load Schedule
+  void _loadPrimarySchedule(AuthProvider auth) {
+    _loadedGroupUuid = auth.currentGroupUuid;
     if (auth.currentGroupUuid.isNotEmpty) {
-      sched.loadSchedule(
+      context.read<ScheduleProvider>().loadSchedule(
         groupUuid: auth.currentGroupUuid,
         groupTitle: auth.currentGroupTitle,
       );
     }
+  }
+
+  // The primary group changed in settings (or the guest picked another): reload it
+  void _reloadOnPrimaryGroupChange(AuthProvider auth) {
+    if (_loadedGroupUuid == null || auth.currentGroupUuid == _loadedGroupUuid) return;
+    _loadedGroupUuid = auth.currentGroupUuid;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _loadPrimarySchedule(context.read<AuthProvider>());
+    });
+  }
+
+  void _triggerInitialDataLoad() {
+    final auth = context.read<AuthProvider>();
+    final prog = context.read<ProgressProvider>();
+    final fv = context.read<FvProvider>();
+
+    // Load Schedule
+    _loadPrimarySchedule(auth);
 
     // Load Progress and FV if full auth
     if (auth.isFullAuth && auth.userProfile?.stageUuid != null) {
@@ -105,6 +130,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
     final isDark = theme.brightness == Brightness.dark;
     final auth = context.watch<AuthProvider>();
     _reloadAfterNewSession(auth.sessionGeneration);
+    _reloadOnPrimaryGroupChange(auth);
     final showReauth = auth.needsLogin && auth.isFullAuth;
 
     final pages = [

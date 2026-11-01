@@ -8,6 +8,7 @@ import 'package:bmstu_neo/providers/auth_provider.dart';
 import 'package:bmstu_neo/providers/schedule_provider.dart';
 import 'package:bmstu_neo/providers/progress_provider.dart';
 import 'package:bmstu_neo/providers/fv_provider.dart';
+import 'package:bmstu_neo/providers/homework_provider.dart';
 import 'package:bmstu_neo/screens/main_navigation_screen.dart';
 import 'package:bmstu_neo/screens/schedule_screen.dart';
 import 'package:bmstu_neo/models/schedule_lesson.dart';
@@ -83,6 +84,7 @@ void main() {
           ChangeNotifierProvider(
             create: (_) => FvProvider(apiService: apiService),
           ),
+          ChangeNotifierProvider(create: (_) => HomeworkProvider()),
         ],
         child: const MaterialApp(
           home: MainNavigationScreen(),

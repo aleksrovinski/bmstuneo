@@ -12,6 +12,9 @@ class AuthProvider with ChangeNotifier {
   static const _keyIsGuest = 'bmstu_is_guest_v1';
   static const _keyGuestGroupTitle = 'bmstu_guest_group_title_v1';
   static const _keyGuestGroupUuid = 'bmstu_guest_group_uuid_v1';
+  /// The group the student picked in settings instead of their own (JSON {title, uuid}).
+  /// Background sync reads it too.
+  static const primaryGroupKey = 'primary_group_v1';
 
   final BmstuApiService apiService;
   final AuthStorage authStorage;
@@ -50,15 +53,52 @@ class AuthProvider with ChangeNotifier {
   /// they failed to fetch while the session was expired.
   int get sessionGeneration => _sessionGeneration;
 
-  String get currentGroupTitle => _isGuest
+  GroupItem? _primaryOverride;
+
+  /// The student's own group: from the LKS profile, or the one picked for guest mode.
+  String get ownGroupTitle => _isGuest
       ? _guestGroupTitle
       : (_userProfile?.groupTitle.isNotEmpty == true
           ? _userProfile!.groupTitle
           : 'Студент');
 
-  String get currentGroupUuid => _isGuest
+  String get ownGroupUuid => _isGuest
       ? _guestGroupUuid
       : (_userProfile?.groupUuid ?? '');
+
+  /// The primary group: home screen, widget, Live Update, notifications and homework
+  /// all use its schedule. The student's own group unless they chose another in settings.
+  String get currentGroupTitle => _primaryOverride?.title ?? ownGroupTitle;
+  String get currentGroupUuid => _primaryOverride?.uuid ?? ownGroupUuid;
+  bool get hasPrimaryOverride => _primaryOverride != null;
+
+  /// Makes [group] primary; null (or the student's own group) goes back to their own.
+  Future<void> setPrimaryGroup(GroupItem? group) async {
+    _primaryOverride = (group == null || group.uuid == ownGroupUuid) ? null : group;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final override = _primaryOverride;
+      if (override == null) {
+        await prefs.remove(primaryGroupKey);
+      } else {
+        await prefs.setString(primaryGroupKey, jsonEncode({'title': override.title, 'uuid': override.uuid}));
+      }
+    } catch (e) {
+      debugPrint('[AuthProvider] Failed to save primary group: $e');
+    }
+    notifyListeners();
+  }
+
+  void _loadPrimaryOverride(SharedPreferences prefs) {
+    final raw = prefs.getString(primaryGroupKey);
+    if (raw == null || raw.isEmpty) return;
+    try {
+      final group = GroupItem.fromJson(jsonDecode(raw) as Map<String, dynamic>);
+      if (group.uuid.isNotEmpty) _primaryOverride = group;
+    } catch (e) {
+      debugPrint('[AuthProvider] Failed to read primary group: $e');
+    }
+  }
 
   Future<void> setGuestGroup(String title, String uuid) async {
     _guestGroupTitle = title;
@@ -82,6 +122,7 @@ class AuthProvider with ChangeNotifier {
   Future<bool> checkSavedAuth() async {
     try {
       final prefs = await SharedPreferences.getInstance();
+      _loadPrimaryOverride(prefs);
 
       // 1. Check if user was in guest mode
       final wasGuest = prefs.getBool(_keyIsGuest) ?? false;
@@ -301,6 +342,7 @@ class AuthProvider with ChangeNotifier {
   // Logout
   Future<void> logout() async {
     _userProfile = null;
+    _primaryOverride = null;
     _isGuest = false;
     _errorMessage = null;
     _needsLogin = false;
@@ -309,6 +351,7 @@ class AuthProvider with ChangeNotifier {
     // No account, nothing to sync: stop background checks and server pushes
     try {
       if (await BackgroundSync.isEnabled()) await BackgroundSync.setEnabled(false);
+      if (await BackgroundSync.isMailEnabled()) await BackgroundSync.setMailEnabled(false);
     } catch (e) {
       debugPrint('[AuthProvider] Failed to turn off notifications on logout: $e');
     }
@@ -318,6 +361,7 @@ class AuthProvider with ChangeNotifier {
       await prefs.remove(_keyIsGuest);
       await prefs.remove(_keyGuestGroupTitle);
       await prefs.remove(_keyGuestGroupUuid);
+      await prefs.remove(primaryGroupKey);
     } catch (e) {
       debugPrint('[AuthProvider] Failed to clear saved session on logout: $e');
     }

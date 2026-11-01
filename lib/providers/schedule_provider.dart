@@ -15,6 +15,10 @@ class ScheduleProvider with ChangeNotifier {
   static const _cachedCurrentWeekTimeKey = 'bmstu_cached_current_week_time_v1';
   final BmstuApiService apiService;
 
+  /// False for a group the student only looks at in the schedule tab: its schedule
+  /// must not end up in the widget or the Live Update.
+  final bool isPrimary;
+
   static const _customLessonsKey = 'bmstu_custom_lessons_v1';
   CurrentWeek? _currentWeek;
   List<ScheduleLesson> _lessons = [];
@@ -28,7 +32,7 @@ class ScheduleProvider with ChangeNotifier {
   String? _errorMessage;
   SyncStatus? _syncStatus;
 
-  ScheduleProvider({required this.apiService}) {
+  ScheduleProvider({required this.apiService, this.isPrimary = true}) {
     // Set default day based on today's weekday (1 = Mon ... 7 = Sun)
     final now = DateTime.now();
     if (now.weekday >= 1 && now.weekday <= 6) {
@@ -98,6 +102,10 @@ class ScheduleProvider with ChangeNotifier {
     return null;
   }
 
+  void _syncWidget() {
+    if (isPrimary) WidgetSyncService.updateScheduleWidget(scheduleProvider: this);
+  }
+
   Future<void> loadCustomLessons() async {
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -118,14 +126,14 @@ class ScheduleProvider with ChangeNotifier {
     _customLessons.add(lesson);
     await _saveCustomLessons();
     notifyListeners();
-    WidgetSyncService.updateScheduleWidget(scheduleProvider: this);
+    _syncWidget();
   }
 
   Future<void> deleteCustomLesson(String id) async {
     _customLessons.removeWhere((l) => l.id == id);
     await _saveCustomLessons();
     notifyListeners();
-    WidgetSyncService.updateScheduleWidget(scheduleProvider: this);
+    _syncWidget();
   }
 
   Future<void> _saveCustomLessons() async {
@@ -268,7 +276,7 @@ class ScheduleProvider with ChangeNotifier {
 
       _isLoading = false;
       notifyListeners();
-      WidgetSyncService.updateScheduleWidget(scheduleProvider: this);
+      _syncWidget();
     } catch (e) {
       _errorMessage = e.toString().replaceAll('Exception: ', '');
 
@@ -296,7 +304,7 @@ class ScheduleProvider with ChangeNotifier {
       _isLoading = false;
       notifyListeners();
       if (_lessons.isNotEmpty) {
-        WidgetSyncService.updateScheduleWidget(scheduleProvider: this);
+        _syncWidget();
       }
     }
   }

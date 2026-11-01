@@ -1,6 +1,10 @@
 import 'package:flutter/material.dart';
 
+import 'package:provider/provider.dart';
+import '../models/homework_note.dart';
 import '../models/schedule_lesson.dart';
+import '../providers/homework_provider.dart';
+import 'homework_sheet.dart';
 import 'teacher_details_sheet.dart';
 
 class PairCard extends StatelessWidget {
@@ -8,7 +12,10 @@ class PairCard extends StatelessWidget {
   final bool isCurrent;
   final VoidCallback? onDelete;
 
-  const PairCard({super.key, required this.lesson, this.isCurrent = false, this.onDelete});
+  /// The day this pair takes place; homework due at it is shown on the card.
+  final DateTime? date;
+
+  const PairCard({super.key, required this.lesson, this.isCurrent = false, this.onDelete, this.date});
 
   Color _getTypeColor(String type) {
     switch (type.toLowerCase()) {
@@ -44,6 +51,17 @@ class PairCard extends StatelessWidget {
     final typeColor = _getTypeColor(lesson.actType);
     final hasTeachers = lesson.teachers.isNotEmpty;
     final meta = [lesson.audiencesFormatted, if (!lesson.isEveryWeek) lesson.weekTitle].join(' · ');
+
+    HomeworkProvider? homework;
+    try {
+      homework = context.watch<HomeworkProvider>();
+    } on ProviderNotFoundException {
+      // Isolated widget tests and screens without homework
+    }
+    final day = date;
+    final dueHere = (homework == null || day == null)
+        ? const <HomeworkNote>[]
+        : homework.pendingFor(lesson.disciplineTitle).where((n) => n.isFor(lesson, day)).toList();
 
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
@@ -138,16 +156,54 @@ class PairCard extends StatelessWidget {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
+                  for (final note in dueHere)
+                    InkWell(
+                      borderRadius: BorderRadius.circular(8),
+                      onTap: () => HomeworkSheet.show(context, existing: note),
+                      child: Container(
+                        margin: const EdgeInsets.only(top: 6),
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+                        decoration: BoxDecoration(
+                          color: scheme.tertiaryContainer.withValues(alpha: 0.7),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(Icons.assignment_rounded, size: 15, color: scheme.onTertiaryContainer),
+                            const SizedBox(width: 6),
+                            Expanded(
+                              child: Text(
+                                'ДЗ: ${note.text}',
+                                style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: scheme.onTertiaryContainer),
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
                 ],
               ),
             ),
-            if (lesson.isCustom && onDelete != null)
-              IconButton(
-                onPressed: onDelete,
-                tooltip: 'Удалить своё занятие',
-                visualDensity: VisualDensity.compact,
-                icon: Icon(Icons.delete_outline_rounded, size: 20, color: scheme.error),
-              ),
+            Column(
+              children: [
+                if (homework != null)
+                  IconButton(
+                    onPressed: () => HomeworkSheet.show(context, disciplineTitle: lesson.disciplineTitle),
+                    tooltip: 'Записать домашнее задание',
+                    visualDensity: VisualDensity.compact,
+                    icon: Icon(Icons.add_task_rounded, size: 20, color: scheme.onSurfaceVariant),
+                  ),
+                if (lesson.isCustom && onDelete != null)
+                  IconButton(
+                    onPressed: onDelete,
+                    tooltip: 'Удалить своё занятие',
+                    visualDensity: VisualDensity.compact,
+                    icon: Icon(Icons.delete_outline_rounded, size: 20, color: scheme.error),
+                  ),
+              ],
+            ),
           ],
         ),
       ),

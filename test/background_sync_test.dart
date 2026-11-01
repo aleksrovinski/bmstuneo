@@ -187,6 +187,18 @@ void main() {
       expect((snapshot['lessons'] as List).single['disciplineTitle'], 'Сопротивление материалов');
     });
 
+    test('The widget follows the primary group chosen in settings', () async {
+      seed(enabled: true, cached: [_disc([_ev('ДЗ', 2, week: 9)])]);
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(AuthProvider.primaryGroupKey, jsonEncode({'title': 'РК6-32Б', 'uuid': 'group-2'}));
+      final api = FakeLksApi([_disc([_ev('ДЗ', 2, week: 9)])]);
+
+      await BackgroundSync.run(api: api, authStorage: AuthStorage(), deliver: (_) async {});
+      expect(api.scheduleCalls, ['group-2']);
+      final snapshot = jsonDecode(prefs.getString(WidgetSyncService.backgroundSnapshotKey)!) as Map<String, dynamic>;
+      expect(snapshot['groupTitle'], 'РК6-32Б');
+    });
+
     test('Does nothing while notifications are off', () async {
       seed(enabled: false, cached: [_disc([_ev('ДЗ', 2, week: 9)])]);
       final api = FakeLksApi([_disc([_ev('ДЗ', 2, stage: '1', week: 9)])]);

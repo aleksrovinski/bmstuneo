@@ -85,7 +85,7 @@ https://github.com/aleksrovinski/bmstuneo/blob/main/PRIVACY_POLICY.md
 
 ### URL Поддержки (Support URL):
 ```text
-https://t.me/bmstu_neo_support
+https://t.me/aleksrovi
 ```
 
 ---

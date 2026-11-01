@@ -1,8 +1,10 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import '../models/mail_message.dart';
+import 'mail_alerts.dart';
 import 'progress_alerts.dart';
 
-/// System notifications about progress (scores, new work, deadlines).
+/// System notifications about progress (scores, new work, deadlines) and new mail.
 class AppNotifications {
   static final _plugin = FlutterLocalNotificationsPlugin();
   static bool _ready = false;
@@ -17,6 +19,15 @@ class AppNotifications {
       channelDescription: 'Баллы за модули, новые задания и сроки сдачи',
     ),
     iOS: DarwinNotificationDetails(threadIdentifier: 'progress'),
+  );
+
+  static const _mailDetails = NotificationDetails(
+    android: AndroidNotificationDetails(
+      'mail',
+      'Почта',
+      channelDescription: 'Новые письма в ящике @student.bmstu.ru',
+    ),
+    iOS: DarwinNotificationDetails(threadIdentifier: 'mail'),
   );
 
   static Future<void> _init() async {
@@ -75,6 +86,34 @@ class AppNotifications {
       }
     } catch (e) {
       debugPrint('[AppNotifications] Failed to show notifications: $e');
+    }
+  }
+
+  /// One banner per letter (sender, subject); a burst of letters becomes one summary.
+  static Future<void> showMail(List<MailSummary> letters) async {
+    if (letters.isEmpty) return;
+    try {
+      await _init();
+      if (letters.length <= _maxSeparate) {
+        for (final m in letters) {
+          await _plugin.show(
+            id: 'mail|${m.uid}'.hashCode & 0x7fffffff,
+            title: m.from.isEmpty ? 'Новое письмо' : m.from,
+            body: m.subject.isEmpty ? '(без темы)' : m.subject,
+            notificationDetails: _mailDetails,
+          );
+        }
+        return;
+      }
+      final senders = letters.map((m) => m.from).where((f) => f.isNotEmpty).toSet();
+      await _plugin.show(
+        id: 'mail-summary'.hashCode & 0x7fffffff,
+        title: newLettersCount(letters.length),
+        body: senders.isEmpty ? 'Почта @student.bmstu.ru' : 'От: ${senders.join(', ')}',
+        notificationDetails: _mailDetails,
+      );
+    } catch (e) {
+      debugPrint('[AppNotifications] Failed to show mail notifications: $e');
     }
   }
 }

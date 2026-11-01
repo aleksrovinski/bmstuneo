@@ -1,5 +1,6 @@
 import 'package:cookie_jar/cookie_jar.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:provider/provider.dart';
 import 'package:workmanager/workmanager.dart';
 import 'package:dynamic_color/dynamic_color.dart';
@@ -8,12 +9,17 @@ import 'services/bmstu_api_service.dart';
 import 'services/secure_cookie_storage.dart';
 import 'services/background_sync.dart';
 import 'services/push_channel.dart';
+import 'services/mail_service.dart';
+import 'services/mail_credentials_storage.dart';
 import 'providers/auth_provider.dart';
 import 'providers/schedule_provider.dart';
 import 'providers/progress_provider.dart';
 import 'providers/fv_provider.dart';
 import 'providers/theme_provider.dart';
 import 'providers/favorites_provider.dart';
+import 'providers/homework_provider.dart';
+import 'providers/mail_provider.dart';
+import 'models/homework_note.dart';
 import 'screens/login_screen.dart';
 import 'screens/main_navigation_screen.dart';
 
@@ -26,50 +32,72 @@ void main() {
   Workmanager().initialize(backgroundSyncDispatcher);
   PushChannel.listen();
   // Push tokens can change; re-register on every launch while notifications are on
-  BackgroundSync.isEnabled().then((on) => on ? PushChannel.enable() : null);
-  final authStorage = AuthStorage();
-  // The LKS session survives restarts, so the password isn't resent on every launch
-  final apiService = BmstuApiService(
-    cookieJar: PersistCookieJar(storage: SecureCookieStorage()),
-  );
+  BackgroundSync.isAnyEnabled().then((on) => on ? PushChannel.enable() : null);
 
-  runApp(
-    MultiProvider(
-      providers: [
-        ChangeNotifierProvider(
-          create: (_) => ThemeProvider(),
+  runApp(buildApp(
+    // The LKS session survives restarts, so the password isn't resent on every launch
+    apiService: BmstuApiService(cookieJar: PersistCookieJar(storage: SecureCookieStorage())),
+    authStorage: AuthStorage(),
+    mailService: MailService(),
+    mailStorage: MailCredentialsStorage(),
+  ));
+}
+
+/// The app with its providers; the demo build passes its own data sources.
+Widget buildApp({
+  required BmstuApiService apiService,
+  required AuthStorage authStorage,
+  required MailService mailService,
+  required MailCredentialsStorage mailStorage,
+  List<HomeworkNote>? homeworkSeed,
+}) {
+  return MultiProvider(
+    providers: [
+      ChangeNotifierProvider(
+        create: (_) => ThemeProvider(),
+      ),
+      ChangeNotifierProvider(
+        create: (_) => FavoritesProvider(),
+      ),
+      ChangeNotifierProvider(
+        create: (_) => HomeworkProvider(seed: homeworkSeed),
+      ),
+      ChangeNotifierProvider(
+        create: (_) => AuthProvider(
+          apiService: apiService,
+          authStorage: authStorage,
         ),
-        ChangeNotifierProvider(
-          create: (_) => FavoritesProvider(),
+      ),
+      ChangeNotifierProvider(
+        create: (_) => ScheduleProvider(
+          apiService: apiService,
         ),
-        ChangeNotifierProvider(
-          create: (_) => AuthProvider(
-            apiService: apiService,
-            authStorage: authStorage,
-          ),
+      ),
+      ChangeNotifierProxyProvider<AuthProvider, ProgressProvider>(
+        create: (_) => ProgressProvider(
+          apiService: apiService,
         ),
-        ChangeNotifierProvider(
-          create: (_) => ScheduleProvider(
-            apiService: apiService,
-          ),
+        update: (_, auth, progress) {
+          progress!.onSilentRelogin = () => auth.reloginSilently();
+          return progress;
+        },
+      ),
+      ChangeNotifierProvider(
+        create: (_) => FvProvider(
+          apiService: apiService,
         ),
-        ChangeNotifierProxyProvider<AuthProvider, ProgressProvider>(
-          create: (_) => ProgressProvider(
-            apiService: apiService,
-          ),
-          update: (_, auth, progress) {
-            progress!.onSilentRelogin = () => auth.reloginSilently();
-            return progress;
-          },
+      ),
+      // Student mail; signing out of the app signs out of mail too
+      ChangeNotifierProxyProvider<AuthProvider, MailProvider>(
+        create: (_) => MailProvider(
+          mailService: mailService,
+          storage: mailStorage,
+          authStorage: authStorage,
         ),
-        ChangeNotifierProvider(
-          create: (_) => FvProvider(
-            apiService: apiService,
-          ),
-        ),
-      ],
-      child: const BmstuApp(),
-    ),
+        update: (_, auth, mail) => mail!..onAuthChanged(auth.isAuthenticated),
+      ),
+    ],
+    child: const BmstuApp(),
   );
 }
 
@@ -92,6 +120,9 @@ class BmstuApp extends StatelessWidget {
           themeMode: themeProv!.materialThemeMode,
           theme: themeProv.buildLightTheme(lightDynamic),
           darkTheme: themeProv.buildDarkTheme(darkDynamic),
+          locale: const Locale('ru'),
+          supportedLocales: const [Locale('ru')],
+          localizationsDelegates: GlobalMaterialLocalizations.delegates,
           home: const AuthGate(),
         );
       },

@@ -43,6 +43,26 @@ class MainActivity : FlutterActivity() {
             }
         }
 
+        // APK self-updates from the website (lib/services/app_update.dart)
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "ru.bmstu.neo/update").setMethodCallHandler { call, result ->
+            when (call.method) {
+                "downloadPath" -> result.success(AppUpdateInstaller.downloadPath(this))
+                "install" -> {
+                    val path = call.argument<String>("path")
+                    val sha256 = call.argument<String>("sha256")
+                    if (path == null || sha256 == null) {
+                        result.error("INVALID_ARGS", "path and sha256 are required", null)
+                    } else {
+                        Thread {
+                            val outcome = AppUpdateInstaller.install(this, path, sha256)
+                            runOnUiThread { result.success(outcome) }
+                        }.start()
+                    }
+                }
+                else -> result.notImplemented()
+            }
+        }
+
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, WIDGET_CHANNEL).setMethodCallHandler { call, result ->
             when (call.method) {
                 "updateWidget" -> {

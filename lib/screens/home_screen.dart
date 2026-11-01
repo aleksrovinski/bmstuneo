@@ -1,13 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+
 import '../providers/auth_provider.dart';
 import '../providers/schedule_provider.dart';
 import '../providers/progress_provider.dart';
 import '../providers/fv_provider.dart';
+import '../providers/homework_provider.dart';
+import '../widgets/homework_sheet.dart';
+import 'homework_screen.dart';
 import '../widgets/pair_card.dart';
 import '../widgets/deadline_card.dart';
 import '../widgets/home_hero_card.dart';
 import '../widgets/offline_status_banner.dart';
+import '../widgets/mail_inbox_button.dart';
 import '../models/nearest_pe_lesson.dart';
 import '../services/widget_sync_service.dart';
 
@@ -16,12 +21,7 @@ class HomeScreen extends StatefulWidget {
   final VoidCallback onOpenGrades;
   final VoidCallback onOpenFv;
 
-  const HomeScreen({
-    super.key,
-    required this.onOpenSchedule,
-    required this.onOpenGrades,
-    required this.onOpenFv,
-  });
+  const HomeScreen({super.key, required this.onOpenSchedule, required this.onOpenGrades, required this.onOpenFv});
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -50,6 +50,8 @@ class _HomeScreenState extends State<HomeScreen> {
     final sched = context.watch<ScheduleProvider>();
     final prog = context.watch<ProgressProvider>();
     final fv = context.watch<FvProvider>();
+    final homeworkProv = context.watch<HomeworkProvider>();
+    final homework = homeworkProv.pending;
 
     final user = auth.userProfile;
     final currentWeek = sched.currentWeek;
@@ -63,8 +65,10 @@ class _HomeScreenState extends State<HomeScreen> {
       final parts = hhmm.split(':');
       return parts.length < 2 ? 0 : (int.tryParse(parts[0]) ?? 0) * 60 + (int.tryParse(parts[1]) ?? 0);
     }
+
     // Once the last pair of the day is over the list switches to tomorrow
-    final showTomorrow = liveStatus.type == LivePairType.finishedForToday ||
+    final showTomorrow =
+        liveStatus.type == LivePairType.finishedForToday ||
         todayLessons.isEmpty ||
         todayLessons.every((l) => minutesOf(l.endTime) <= nowMinutes);
 
@@ -82,26 +86,19 @@ class _HomeScreenState extends State<HomeScreen> {
           children: [
             Text(
               auth.isGuest ? 'Гостевой режим' : (user?.groupTitle ?? 'Студент'),
-              style: TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w700,
-                color: theme.colorScheme.primary,
-              ),
+              style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: theme.colorScheme.primary),
             ),
             Text(
               auth.isGuest ? 'МГТУ им. Н.Э. Баумана' : '${user?.lastName} ${user?.firstName}',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.w800,
-                color: theme.colorScheme.onSurface,
-              ),
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: theme.colorScheme.onSurface),
             ),
           ],
         ),
         actions: [
+          const MailInboxButton(),
           // Week Badge
           Container(
-            margin: const EdgeInsets.only(right: 16),
+            margin: const EdgeInsets.only(left: 4, right: 16),
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
             decoration: BoxDecoration(
               color: (currentWeek?.isNumerator ?? true)
@@ -144,10 +141,7 @@ class _HomeScreenState extends State<HomeScreen> {
         onRefresh: () async {
           await sched.refresh();
           if (auth.isFullAuth && user?.stageUuid != null) {
-            await Future.wait([
-              prog.refresh(),
-              fv.refresh(),
-            ]);
+            await Future.wait([prog.refresh(), fv.refresh()]);
           }
         },
         child: SingleChildScrollView(
@@ -168,13 +162,47 @@ class _HomeScreenState extends State<HomeScreen> {
               ],
 
               // 1. Unified Hero Card (Greeting + Next/Live Pair Tracker + Compact Pass Button)
-              HomeHeroCard(
-                onOpenSchedule: widget.onOpenSchedule,
-              ),
+              HomeHeroCard(onOpenSchedule: widget.onOpenSchedule),
 
               // 2. Physical Culture Quick Card
-              if (auth.isFullAuth || nearestPe != null) ...[
-                _buildFvBanner(context, fv, nearestPe),
+              if (auth.isFullAuth || nearestPe != null) ...[_buildFvBanner(context, fv, nearestPe)],
+
+              // The student's own homework notes; hidden until they are read, so a slow
+              // first launch doesn't look like they are gone
+              if (homeworkProv.isLoaded) ...[
+                _buildSectionHeader(
+                  homework.isEmpty ? 'Домашние задания' : 'Домашние задания · ${homework.length}',
+                  action: homework.isEmpty ? 'Добавить' : 'Все',
+                  onAction: homework.isEmpty ? () => HomeworkSheet.show(context) : () => HomeworkScreen.open(context),
+                ),
+                if (homework.isEmpty)
+                  _buildEmptyNotice(
+                    'Запишите ДЗ на следующую пару или к сроку — кнопка «Добавить» или + в карточке пары',
+                  )
+                else
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                    child: Material(
+                      color: theme.colorScheme.surfaceContainerLow,
+                      borderRadius: BorderRadius.circular(18),
+                      clipBehavior: Clip.antiAlias,
+                      child: Column(
+                        children: [
+                          for (final note in homework.take(3)) HomeworkTile(note: note),
+                          if (homework.length > 3)
+                            ListTile(
+                              dense: true,
+                              title: Text(
+                                'Ещё ${homework.length - 3}',
+                                style: TextStyle(color: theme.colorScheme.primary),
+                              ),
+                              trailing: Icon(Icons.chevron_right_rounded, color: theme.colorScheme.primary),
+                              onTap: () => HomeworkScreen.open(context),
+                            ),
+                        ],
+                      ),
+                    ),
+                  ),
               ],
 
               // Upcoming deadlines
@@ -195,17 +223,12 @@ class _HomeScreenState extends State<HomeScreen> {
                 _buildEmptyNotice('Нет горящих дедлайнов на ближайшие недели! 🎉')
               else
                 ...nearestDeadlines.map(
-                  (c) => DeadlineCard(
-                    event: c,
-                    status: prog.getStatusForEvent(c, currentWeekNum),
-                  ),
+                  (c) => DeadlineCard(event: c, status: prog.getStatusForEvent(c, currentWeekNum)),
                 ),
 
               // Schedule preview: today, or tomorrow once today is over
               _buildSectionHeader(
-                showTomorrow
-                    ? 'Завтра, ${sched.tomorrowDayTitle.toLowerCase()}'
-                    : 'Сегодня',
+                showTomorrow ? 'Завтра, ${sched.tomorrowDayTitle.toLowerCase()}' : 'Сегодня',
                 action: 'Всё расписание',
                 onAction: widget.onOpenSchedule,
               ),
@@ -214,11 +237,11 @@ class _HomeScreenState extends State<HomeScreen> {
                 if (sched.lessonsForTomorrow.isEmpty)
                   _buildEmptyNotice('Пар нет — можно отдохнуть ✨')
                 else
-                  ...sched.lessonsForTomorrow.map((l) => PairCard(lesson: l, isCurrent: false)),
+                  ...sched.lessonsForTomorrow.map((l) => PairCard(lesson: l, date: sched.tomorrowDate)),
               ] else ...[
                 ...todayLessons.map((l) {
                   final isCurrent = liveStatus.currentLesson?.time == l.time;
-                  return PairCard(lesson: l, isCurrent: isCurrent);
+                  return PairCard(lesson: l, isCurrent: isCurrent, date: now);
                 }),
               ],
             ],
@@ -227,8 +250,6 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
     );
   }
-
-
 
   Widget _buildSectionHeader(String title, {String? action, VoidCallback? onAction}) {
     final scheme = Theme.of(context).colorScheme;
@@ -272,11 +293,7 @@ class _HomeScreenState extends State<HomeScreen> {
               Expanded(
                 child: Text(
                   message,
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w500,
-                    color: theme.colorScheme.primary,
-                  ),
+                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500, color: theme.colorScheme.primary),
                 ),
               ),
             ],
@@ -291,19 +308,12 @@ class _HomeScreenState extends State<HomeScreen> {
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
       padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: theme.colorScheme.surfaceContainerLow,
-        borderRadius: BorderRadius.circular(14),
-      ),
+      decoration: BoxDecoration(color: theme.colorScheme.surfaceContainerLow, borderRadius: BorderRadius.circular(14)),
       child: Center(
         child: Text(
           text,
           textAlign: TextAlign.center,
-          style: TextStyle(
-            fontSize: 13,
-            color: theme.colorScheme.onSurfaceVariant,
-            fontWeight: FontWeight.w500,
-          ),
+          style: TextStyle(fontSize: 13, color: theme.colorScheme.onSurfaceVariant, fontWeight: FontWeight.w500),
         ),
       ),
     );
