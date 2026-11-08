@@ -10,6 +10,8 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/Platform-Android%20%7C%20iOS-4CAF50)]()
 
+**[bmstuneo.xyz](https://bmstuneo.xyz)** — сайт приложения: скачать APK для Android и TestFlight для iOS
+
 </div>
 
 ## Возможности
@@ -61,7 +63,8 @@ app/
 └── .github/workflows/   CI: анализ и тесты
 ```
 
-Лендинг приложения живёт в отдельном репозитории (папка `website/` рядом с этой).
+Сайт приложения — [bmstuneo.xyz](https://bmstuneo.xyz); его код живёт в отдельном репозитории
+(папка `website/` рядом с этой).
 
 ## Запуск
 
@@ -173,6 +176,7 @@ flutter build ipa --release --dart-define=PUSH_SERVER_URL=https://bmstuneo.xyz
 
 ## Контакты
 
+- Сайт: [bmstuneo.xyz](https://bmstuneo.xyz)
 - Email: [nesegsasa@gmail.com](mailto:nesegsasa@gmail.com)
 - Telegram: [@aleksrovi](https://t.me/aleksrovi)
 
