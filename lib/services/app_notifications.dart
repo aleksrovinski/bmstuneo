@@ -1,13 +1,19 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+
 import '../models/mail_message.dart';
 import 'mail_alerts.dart';
+import 'notification_target.dart';
 import 'progress_alerts.dart';
 
 /// System notifications about progress (scores, new work, deadlines) and new mail.
 class AppNotifications {
   static final _plugin = FlutterLocalNotificationsPlugin();
   static bool _ready = false;
+
+  /// The notification the student tapped, until the app has opened its screen
+  /// (MainNavigationScreen consumes it and sets it back to null).
+  static final tapped = ValueNotifier<NotificationTarget?>(null);
 
   // More than this at once is collapsed into a summary, not a wall of banners
   static const _maxSeparate = 4;
@@ -22,11 +28,7 @@ class AppNotifications {
   );
 
   static const _mailDetails = NotificationDetails(
-    android: AndroidNotificationDetails(
-      'mail',
-      'Почта',
-      channelDescription: 'Новые письма в ящике @student.bmstu.ru',
-    ),
+    android: AndroidNotificationDetails('mail', 'Почта', channelDescription: 'Новые письма в ящике @student.bmstu.ru'),
     iOS: DarwinNotificationDetails(threadIdentifier: 'mail'),
   );
 
@@ -42,8 +44,23 @@ class AppNotifications {
           requestSoundPermission: false,
         ),
       ),
+      onDidReceiveNotificationResponse: (response) => tapped.value = NotificationTarget.decode(response.payload),
     );
     _ready = true;
+  }
+
+  /// Call once at app start: listens for taps and picks up the notification that
+  /// launched the app from scratch.
+  static Future<void> listenForTaps() async {
+    try {
+      await _init();
+      final launch = await _plugin.getNotificationAppLaunchDetails();
+      if (launch?.didNotificationLaunchApp ?? false) {
+        tapped.value ??= NotificationTarget.decode(launch!.notificationResponse?.payload);
+      }
+    } catch (e) {
+      debugPrint('[AppNotifications] Failed to set up notification taps: $e');
+    }
   }
 
   /// Asks the OS for permission to show notifications; true if granted.
@@ -73,6 +90,7 @@ class AppNotifications {
           title: alert.title,
           body: alert.body,
           notificationDetails: _details,
+          payload: NotificationTarget.progress(discipline: alert.discipline).encode(),
         );
       }
       final rest = alerts.length - separate.length;
@@ -82,6 +100,7 @@ class AppNotifications {
           title: 'Ещё $rest обновлений успеваемости',
           body: alerts.skip(separate.length).map((a) => a.title).join(' • '),
           notificationDetails: _details,
+          payload: const NotificationTarget.progress().encode(),
         );
       }
     } catch (e) {
@@ -101,6 +120,7 @@ class AppNotifications {
             title: m.from.isEmpty ? 'Новое письмо' : m.from,
             body: m.subject.isEmpty ? '(без темы)' : m.subject,
             notificationDetails: _mailDetails,
+            payload: NotificationTarget.mail(uid: m.uid, from: m.from, subject: m.subject).encode(),
           );
         }
         return;
@@ -111,6 +131,7 @@ class AppNotifications {
         title: newLettersCount(letters.length),
         body: senders.isEmpty ? 'Почта @student.bmstu.ru' : 'От: ${senders.join(', ')}',
         notificationDetails: _mailDetails,
+        payload: const NotificationTarget.mail().encode(),
       );
     } catch (e) {
       debugPrint('[AppNotifications] Failed to show mail notifications: $e');

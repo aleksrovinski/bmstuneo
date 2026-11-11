@@ -6,8 +6,10 @@ class ProgressAlert {
   final String key;
   final String title;
   final String body;
+  /// The discipline it is about; tapping the notification opens it in "Прогресс"
+  final String discipline;
 
-  const ProgressAlert({required this.key, required this.title, required this.body});
+  const ProgressAlert({required this.key, required this.title, required this.body, this.discipline = ''});
 
   @override
   String toString() => '$title — $body';
@@ -46,6 +48,7 @@ List<ProgressAlert> computeProgressAlerts({
       final score = e.moduleScore;
       if (previous != null && score != null && old?.moduleScore != score) {
         add(ProgressAlert(
+          discipline: d.title,
           key: 'module|${e.markKey}|$score',
           title: 'Баллы за ${e.title.toLowerCase()}',
           body: '${d.title}: ${_moduleVerdict(e, score)}',
@@ -56,6 +59,7 @@ List<ProgressAlert> computeProgressAlerts({
       final newlyIssued = e.isIssued && e.manualMark == null && old != null && !old.isIssued && !old.isSubmitted;
       if (previous != null && newlyIssued && e.type != 'М') {
         add(ProgressAlert(
+          discipline: d.title,
           key: 'issued|${e.markKey}',
           title: e.type == 'РК' || e.type == 'КР' ? 'Назначен ${e.title}' : 'Выдано ${e.title}',
           body: '${d.title} • срок — ${e.week} неделя',
@@ -65,6 +69,7 @@ List<ProgressAlert> computeProgressAlerts({
       // 3. Due this week and still not done (manual "Сдано" counts as done)
       if (e.isIssued && !e.isSubmitted && e.week == currentWeek && e.type != 'М') {
         add(ProgressAlert(
+          discipline: d.title,
           key: 'due|${e.markKey}|$currentWeek',
           title: 'Срок на этой неделе: ${e.title}',
           body: '${d.title} • ${e.week} неделя',

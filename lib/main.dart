@@ -9,6 +9,7 @@ import 'services/bmstu_api_service.dart';
 import 'services/secure_cookie_storage.dart';
 import 'services/background_sync.dart';
 import 'services/push_channel.dart';
+import 'services/app_notifications.dart';
 import 'services/mail_service.dart';
 import 'services/mail_credentials_storage.dart';
 import 'providers/auth_provider.dart';
@@ -31,6 +32,8 @@ void main() {
   // Registers the background progress check (scheduled only if the student enables it)
   Workmanager().initialize(backgroundSyncDispatcher);
   PushChannel.listen();
+  // Tapping a notification opens its screen (MainNavigationScreen)
+  AppNotifications.listenForTaps();
   // Push tokens can change; re-register on every launch while notifications are on
   BackgroundSync.isAnyEnabled().then((on) => on ? PushChannel.enable() : null);
 

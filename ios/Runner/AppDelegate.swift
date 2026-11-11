@@ -19,6 +19,8 @@ import workmanager_apple
       GeneratedPluginRegistrant.register(with: registry)
     }
     WorkmanagerPlugin.registerPeriodicTask(withIdentifier: "ru.bmstu.neo.sync", earliestBeginInSeconds: 3600)
+    // Notification taps reach flutter_local_notifications through FlutterAppDelegate
+    UNUserNotificationCenter.current().delegate = self
     let result = super.application(application, didFinishLaunchingWithOptions: launchOptions)
     if !AppDelegate.isChannelRegistered {
       if let registrar = self.registrar(forPlugin: "RuBmstuNeoWidgetPlugin") {

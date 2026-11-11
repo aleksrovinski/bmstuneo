@@ -58,6 +58,9 @@ class _GradesScreenState extends State<GradesScreen> {
       return _buildGuestScreen(context);
     }
 
+    // The query can also come from a tapped notification about one discipline
+    if (_searchController.text != prog.searchQuery) _searchController.text = prog.searchQuery;
+
     final currentWeekNum = sched.currentWeek?.weekNumber ?? 1;
     final filteredDisciplines = prog.filteredDisciplines;
 

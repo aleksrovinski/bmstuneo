@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+
 import '../providers/auth_provider.dart';
 import '../providers/schedule_provider.dart';
 import '../providers/progress_provider.dart';
@@ -12,8 +13,13 @@ import 'grades_screen.dart';
 import 'fv_screen.dart';
 import 'profile_screen.dart';
 import 'login_screen.dart';
+import '../models/mail_message.dart';
+import '../services/app_notifications.dart';
+import '../services/notification_target.dart';
 import '../services/widget_sync_service.dart';
 import '../widgets/app_update_dialog.dart';
+import 'mail_message_screen.dart';
+import 'mail_screen.dart';
 
 class MainNavigationScreen extends StatefulWidget {
   const MainNavigationScreen({super.key});
@@ -22,8 +28,7 @@ class MainNavigationScreen extends StatefulWidget {
   State<MainNavigationScreen> createState() => _MainNavigationScreenState();
 }
 
-class _MainNavigationScreenState extends State<MainNavigationScreen>
-    with WidgetsBindingObserver {
+class _MainNavigationScreenState extends State<MainNavigationScreen> with WidgetsBindingObserver {
   int _currentIndex = 0;
   bool _hasInitialLoaded = false;
   int _loadedForSession = 0;
@@ -32,18 +37,53 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    AppNotifications.tapped.addListener(_onNotificationTapped);
+    // The notification that launched the app arrived before this screen existed
+    WidgetsBinding.instance.addPostFrameCallback((_) => _onNotificationTapped());
   }
 
   @override
   void dispose() {
+    AppNotifications.tapped.removeListener(_onNotificationTapped);
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
 
+  /// Opens the screen the tapped notification is about.
+  void _onNotificationTapped() {
+    final target = AppNotifications.tapped.value;
+    if (target == null || !mounted) return;
+    AppNotifications.tapped.value = null;
+    // Whatever was open on top (a letter, settings) gives way to the notification
+    Navigator.of(context).popUntil((route) => route.isFirst);
+
+    switch (target.kind) {
+      case NotificationKind.progress:
+        if (target.discipline.isNotEmpty) context.read<ProgressProvider>().setSearchQuery(target.discipline);
+        _onDestinationSelected(1);
+      case NotificationKind.mail:
+        _openMail(target);
+    }
+  }
+
+  Future<void> _openMail(NotificationTarget target) async {
+    final mail = context.read<MailProvider>();
+    MailScreen.open(context);
+    final uid = target.uid;
+    if (uid == null) return;
+    // On a cold start the saved mail login is still being restored
+    await mail.restore();
+    if (!mounted || mail.status != MailStatus.ready) return;
+    MailMessageScreen.open(
+      context,
+      mailbox: target.mailbox,
+      summary: MailSummary(uid: uid, from: target.from, subject: target.subject),
+    );
+  }
+
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed ||
-        state == AppLifecycleState.paused) {
+    if (state == AppLifecycleState.resumed || state == AppLifecycleState.paused) {
       final sched = context.read<ScheduleProvider>();
       if (sched.allLessons.isNotEmpty) {
         WidgetSyncService.updateScheduleWidget(scheduleProvider: sched);
@@ -146,11 +186,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
     ];
 
     const destinations = [
-      NavigationDestination(
-        icon: Icon(Icons.home_outlined),
-        selectedIcon: Icon(Icons.home_rounded),
-        label: 'Главная',
-      ),
+      NavigationDestination(icon: Icon(Icons.home_outlined), selectedIcon: Icon(Icons.home_rounded), label: 'Главная'),
       NavigationDestination(
         icon: Icon(Icons.school_outlined),
         selectedIcon: Icon(Icons.school_rounded),
@@ -183,10 +219,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
             child: MediaQuery.removePadding(
               context: context,
               removeTop: showReauth,
-              child: IndexedStack(
-                index: _currentIndex,
-                children: pages,
-              ),
+              child: IndexedStack(index: _currentIndex, children: pages),
             ),
           ),
         ],
@@ -194,22 +227,13 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
       bottomNavigationBar: isIOS
           ? Container(
               decoration: BoxDecoration(
-                color: isDark
-                    ? const Color(0xF01C1C1E)
-                    : const Color(0xF5FFFFFF),
+                color: isDark ? const Color(0xF01C1C1E) : const Color(0xF5FFFFFF),
                 border: Border(
-                  top: BorderSide(
-                    color: isDark
-                        ? const Color(0x33FFFFFF)
-                        : const Color(0x28000000),
-                    width: 0.5,
-                  ),
+                  top: BorderSide(color: isDark ? const Color(0x33FFFFFF) : const Color(0x28000000), width: 0.5),
                 ),
                 boxShadow: [
                   BoxShadow(
-                    color: isDark
-                        ? Colors.black.withValues(alpha: 0.35)
-                        : Colors.black.withValues(alpha: 0.04),
+                    color: isDark ? Colors.black.withValues(alpha: 0.35) : Colors.black.withValues(alpha: 0.04),
                     blurRadius: 10,
                     offset: const Offset(0, -2),
                   ),
@@ -226,10 +250,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
           : Container(
               decoration: BoxDecoration(
                 border: Border(
-                  top: BorderSide(
-                    color: theme.colorScheme.outlineVariant.withValues(alpha: 0.4),
-                    width: 1,
-                  ),
+                  top: BorderSide(color: theme.colorScheme.outlineVariant.withValues(alpha: 0.4), width: 1),
                 ),
               ),
               child: NavigationBar(

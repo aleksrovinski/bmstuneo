@@ -63,6 +63,8 @@ void main() {
       );
       expect(_titles(alerts), ['Выдано ДЗ-2', 'Назначен РК-2']);
       expect(alerts.first.body, 'Инженерная графика • срок — 9 неделя');
+      // Tapping the notification opens this discipline in "Прогресс"
+      expect(alerts.map((a) => a.discipline).toSet(), {'Инженерная графика'});
     });
 
     test('Due this week, unless the student marked it as done', () {
