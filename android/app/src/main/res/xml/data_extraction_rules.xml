@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Android 12+: what goes into the Google backup and a device-to-device transfer.
+     Only the Flutter preferences file: homework notes, custom lessons, manual marks and
+     settings. Everything else stays on the device: the Keystore-encrypted password,
+     session cookies and push identity can't be decrypted on another device anyway,
+     and the widget snapshot and push token are rebuilt on first launch. -->
+<data-extraction-rules>
+    <cloud-backup>
+        <include domain="sharedpref" path="FlutterSharedPreferences.xml" />
+    </cloud-backup>
+    <device-transfer>
+        <include domain="sharedpref" path="FlutterSharedPreferences.xml" />
+    </device-transfer>
+</data-extraction-rules>

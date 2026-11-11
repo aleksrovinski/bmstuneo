@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:dio/dio.dart';
@@ -622,7 +623,7 @@ class BmstuApiService {
           return DisciplineProgress(
             title: discTitle,
             disciplineUuid: dMap['disciplineUuid']?.toString(),
-            points: dMap['points'] is Map ? Map<String, dynamic>.from(dMap['points']) : {},
+            points: dMap['points'] is Map ? Map<String, dynamic>.from(dMap['points'] as Map) : {},
             controls: _parseEventList(rawControls, discTitle),
             laboratory: _parseEventList(rawLabs, discTitle),
             seminars: _parseEventList(rawSeminars, discTitle),
@@ -648,7 +649,7 @@ class BmstuApiService {
     return [];
   }
 
-  List<ControlEvent> _parseEventList(List rawList, String discTitle) {
+  List<ControlEvent> _parseEventList(List<dynamic> rawList, String discTitle) {
     final counts = <String, int>{};
     return rawList.map((c) {
       final cMap = c as Map<String, dynamic>;
@@ -692,7 +693,7 @@ class BmstuApiService {
         disciplineTitle: discTitle,
         controlIndex: countIdx,
         controlId: cMap['controlId']?.toString(),
-        points: cMap['points'] is Map ? Map<String, dynamic>.from(cMap['points']) : null,
+        points: cMap['points'] is Map ? Map<String, dynamic>.from(cMap['points'] as Map) : null,
       );
     }).toList();
   }
@@ -1013,11 +1014,11 @@ class BmstuApiService {
           if (cachedList.isNotEmpty) {
             // Trigger background refresh if authenticated
             if (_isAuthenticated) {
-              _fetchAndCacheSessionResults(prefs, cacheKey, stageUuid: targetStage)
+              unawaited(_fetchAndCacheSessionResults(prefs, cacheKey, stageUuid: targetStage)
                   .catchError((Object e) {
                 debugPrint('[BmstuApiService] Background session refresh failed: $e');
                 return <SemesterSession>[];
-              });
+              }));
             }
             return cachedList;
           }

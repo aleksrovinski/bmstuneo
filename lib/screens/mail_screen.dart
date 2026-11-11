@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -281,7 +282,7 @@ class _MailTile extends StatelessWidget {
     final mail = context.read<MailProvider>();
     final messenger = ScaffoldMessenger.of(context);
     final errorColor = Theme.of(context).colorScheme.error;
-    HapticFeedback.selectionClick();
+    unawaited(HapticFeedback.selectionClick());
     try {
       if (direction == DismissDirection.startToEnd) {
         await mail.setSeen(summary, !summary.isSeen);

@@ -92,6 +92,18 @@ class BackgroundSync {
     }
     if (!await AppNotifications.requestPermission()) return false;
     await prefs.setBool(key, true);
+    await _schedule();
+    return true;
+  }
+
+  /// Call at startup. While notifications are on, makes sure the periodic check is
+  /// still scheduled and the push server has the current token: push tokens change,
+  /// and settings restored from a backup arrive on a device where nothing is scheduled.
+  static Future<void> resume() async {
+    if (await isAnyEnabled()) await _schedule();
+  }
+
+  static Future<void> _schedule() async {
     await Workmanager().registerPeriodicTask(
       taskId,
       taskId,
@@ -100,11 +112,11 @@ class BackgroundSync {
       // Android runs a new periodic task right away; enabling already did the first sync
       initialDelay: const Duration(hours: 1),
       constraints: Constraints(networkType: NetworkType.connected),
+      // An already scheduled task keeps its timing
       existingWorkPolicy: ExistingPeriodicWorkPolicy.keep,
     );
     // Silent pushes on top of the periodic checks; failing here doesn't block them
     await PushChannel.enable();
-    return true;
   }
 
   /// One sync pass. Returns the alerts that were delivered. Never asks the user

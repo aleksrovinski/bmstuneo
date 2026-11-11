@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -68,17 +69,17 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> with Widget
 
   Future<void> _openMail(NotificationTarget target) async {
     final mail = context.read<MailProvider>();
-    MailScreen.open(context);
+    unawaited(MailScreen.open(context));
     final uid = target.uid;
     if (uid == null) return;
     // On a cold start the saved mail login is still being restored
     await mail.restore();
     if (!mounted || mail.status != MailStatus.ready) return;
-    MailMessageScreen.open(
+    unawaited(MailMessageScreen.open(
       context,
       mailbox: target.mailbox,
       summary: MailSummary(uid: uid, from: target.from, subject: target.subject),
-    );
+    ));
   }
 
   @override

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -52,7 +53,7 @@ class _NotificationSettingsCardState extends State<NotificationSettingsCard> {
       return;
     }
     // First pass right away: remembers the current state (and reports this week's deadlines)
-    if (value) BackgroundSync.run();
+    if (value) unawaited(BackgroundSync.run());
   }
 
   @override

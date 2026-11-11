@@ -34,8 +34,8 @@ void main() {
   PushChannel.listen();
   // Tapping a notification opens its screen (MainNavigationScreen)
   AppNotifications.listenForTaps();
-  // Push tokens can change; re-register on every launch while notifications are on
-  BackgroundSync.isAnyEnabled().then((on) => on ? PushChannel.enable() : null);
+  // While notifications are on: keep the periodic check scheduled and the push token current
+  BackgroundSync.resume().catchError((Object e) => debugPrint('[main] Background sync not resumed: $e'));
 
   runApp(buildApp(
     // The LKS session survives restarts, so the password isn't resent on every launch

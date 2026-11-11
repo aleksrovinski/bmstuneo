@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -154,7 +155,7 @@ class AuthProvider with ChangeNotifier {
 
       // 3. Cached profile: open the app right away and resume the session in the background
       if (_userProfile != null) {
-        _resumeSession();
+        unawaited(_resumeSession());
         return true;
       }
 
