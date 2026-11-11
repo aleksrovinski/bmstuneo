@@ -46,7 +46,15 @@ Future<void> main() async {
     onTick: (stats) => stdout.writeln('${DateTime.now().toUtc().toIso8601String()} tick: $stats'),
   );
 
-  final handler = buildHandler(store: store, scheduler: scheduler, adminToken: env['ADMIN_TOKEN']);
+  final handler = buildHandler(
+    store: store,
+    scheduler: scheduler,
+    adminToken: env['ADMIN_TOKEN'],
+    rateLimiter: RateLimiter(
+      maxPerMinute: int.parse(env['RATE_LIMIT_PER_MINUTE'] ?? '60'),
+      sharedMaxPerMinute: int.parse(env['RATE_LIMIT_SHARED_PER_MINUTE'] ?? '1200'),
+    ),
+  );
   final server = await io.serve(handler, InternetAddress.anyIPv4, int.parse(env['PORT'] ?? '8080'));
   stdout.writeln('BMSTU neo push server on :${server.port}, '
       '${(await store.all()).length} devices, senders: ${senders.keys.join(', ')}');

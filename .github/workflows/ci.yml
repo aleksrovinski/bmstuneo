@@ -1,4 +1,4 @@
-name: Flutter CI
+name: CI
 
 on:
   push:
@@ -6,32 +6,75 @@ on:
   pull_request:
     branches: [ "main" ]
 
+# A newer push to the same branch makes the older run pointless
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # The version releases are built with; bump it together with the local SDK
+  FLUTTER_VERSION: '3.47.7'
+
 jobs:
-  build-and-test:
+  app:
+    name: App — analyze and test
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Set up Java
-        uses: actions/setup-java@v4
-        with:
-          distribution: 'zulu'
-          java-version: '17'
+      - uses: actions/checkout@v4
 
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.x'
-          channel: 'stable'
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
           cache: true
 
-      - name: Install dependencies
-        run: flutter pub get
+      - run: flutter pub get
+      - run: flutter analyze
+      - run: flutter test
 
-      - name: Analyze code
-        run: flutter analyze
+  android:
+    name: App — Android build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
 
-      - name: Run unit & widget tests
-        run: flutter test
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: zulu
+          java-version: '17'
+          cache: gradle
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - run: flutter pub get
+      # Debug needs no signing key and still compiles the Kotlin side and the Gradle config
+      - run: flutter build apk --debug
+
+  server:
+    name: Push server — analyze, test, image
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: server
+    steps:
+      - uses: actions/checkout@v4
+
+      # The Dart SDK that ships with the same Flutter version
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - run: dart pub get
+      - run: dart analyze --fatal-infos
+      - run: dart test
+      - run: docker build -t bmstu-neo-push .

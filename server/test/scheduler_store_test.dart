@@ -103,4 +103,21 @@ void main() {
     expect((await reopened.get('a'))!.apnsEnvironment, 'production');
     expect(File('$path.tmp').existsSync(), isFalse);
   });
+
+  test('FileDeviceStore saves a burst of changes together and recovers from a failed write', () async {
+    final dir = await Directory.systemTemp.createTemp('push_store_test');
+    addTearDown(() => dir.delete(recursive: true));
+    final path = '${dir.path}/devices.json';
+
+    final store = await FileDeviceStore.open(path);
+    await Future.wait([for (var i = 0; i < 50; i++) store.put(_device('d$i'))]);
+    expect(await (await FileDeviceStore.open(path)).all(), hasLength(50));
+
+    // The data directory disappears (volume hiccup): that write fails, the next one works
+    await dir.delete(recursive: true);
+    await expectLater(store.put(_device('lost')), throwsA(isA<FileSystemException>()));
+    await dir.create();
+    await store.put(_device('back'));
+    expect(await (await FileDeviceStore.open(path)).all(), hasLength(52));
+  });
 }

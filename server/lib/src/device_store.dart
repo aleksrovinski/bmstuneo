@@ -31,11 +31,14 @@ class InMemoryDeviceStore implements DeviceStore {
 /// Keeps everything in memory and rewrites one JSON file on each change.
 ///
 /// Writes go to a temporary file that is then renamed over the old one, so a
-/// crash mid-write never leaves a truncated file. Writes are serialized.
+/// crash mid-write never leaves a truncated file. Writes are serialized, and
+/// changes made while one is in progress are saved together by the next one
+/// (a scheduler tick touches hundreds of devices).
 class FileDeviceStore implements DeviceStore {
   final File _file;
   final Map<String, Device> _devices;
   Future<void> _lastWrite = Future.value();
+  Future<void>? _queuedWrite;
 
   FileDeviceStore._(this._file, this._devices);
 
@@ -73,15 +76,22 @@ class FileDeviceStore implements DeviceStore {
   Future<List<Device>> all() async => _devices.values.toList();
 
   Future<void> _persist() {
-    // Snapshot now, write after the previous write finished
-    final snapshot = jsonEncode({
-      'version': 1,
-      'devices': _devices.values.map((d) => d.toJson()).toList(),
-    });
-    return _lastWrite = _lastWrite.then((_) async {
+    // A write that hasn't started yet will pick this change up too
+    final queued = _queuedWrite;
+    if (queued != null) return queued;
+
+    // A failed write must not block the ones after it
+    final write = _lastWrite.catchError((_) {}).then((_) async {
+      _queuedWrite = null;
+      final snapshot = jsonEncode({
+        'version': 1,
+        'devices': _devices.values.map((d) => d.toJson()).toList(),
+      });
       final tmp = File('${_file.path}.tmp');
       await tmp.writeAsString(snapshot, flush: true);
       await tmp.rename(_file.path);
     });
+    _queuedWrite = write;
+    return _lastWrite = write;
   }
 }

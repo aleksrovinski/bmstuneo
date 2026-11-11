@@ -18,6 +18,7 @@ const _maxBodyBytes = 8 * 1024;
 ///   POST   /v1/devices                 register or update this installation
 ///   DELETE /v1/devices/{installationId} unsubscribe (header x-installation-secret)
 ///   GET    /healthz
+///   GET    /internal/stats             number of devices (Bearer ADMIN_TOKEN)
 ///   POST   /internal/tick              run one scheduler pass (Bearer ADMIN_TOKEN)
 Handler buildHandler({
   required DeviceStore store,
@@ -87,14 +88,27 @@ Handler buildHandler({
     return Response(204);
   });
 
-  router.get('/healthz', (Request request) async {
-    return Response.ok(jsonEncode({'ok': true, 'devices': (await store.all()).length}),
+  // Public, so it says nothing about how many people use the app
+  router.get('/healthz', (Request request) {
+    return Response.ok(jsonEncode({'ok': true}), headers: {'content-type': 'application/json'});
+  });
+
+  Response? refuseNonAdmin(Request request) {
+    if (adminToken == null || adminToken.isEmpty) return Response.notFound(null);
+    if (request.headers['authorization'] != 'Bearer $adminToken') return _error(401, 'admin token required');
+    return null;
+  }
+
+  router.get('/internal/stats', (Request request) async {
+    final refusal = refuseNonAdmin(request);
+    if (refusal != null) return refusal;
+    return Response.ok(jsonEncode({'devices': (await store.all()).length}),
         headers: {'content-type': 'application/json'});
   });
 
   router.post('/internal/tick', (Request request) async {
-    if (adminToken == null || adminToken.isEmpty) return Response.notFound(null);
-    if (request.headers['authorization'] != 'Bearer $adminToken') return _error(401, 'admin token required');
+    final refusal = refuseNonAdmin(request);
+    if (refusal != null) return refusal;
     final stats = await scheduler.tick();
     return Response.ok(jsonEncode(stats.toJson()), headers: {'content-type': 'application/json'});
   });
@@ -116,11 +130,17 @@ Middleware _limitBody() => (inner) => (request) {
     };
 
 /// Fixed-window limit per client IP; enough to stop scripted abuse of a tiny API.
+///
+/// A loopback or unknown address is not one client: it is everyone behind a proxy
+/// that didn't pass the real address on (Caddy behind Xray without PROXY protocol).
+/// Those requests share the much larger [sharedMaxPerMinute], so a busy morning
+/// doesn't lock every student out at [maxPerMinute].
 class RateLimiter {
   final int maxPerMinute;
+  final int sharedMaxPerMinute;
   final Map<String, (int, int)> _windows = {}; // ip -> (minute, count)
 
-  RateLimiter({this.maxPerMinute = 60});
+  RateLimiter({this.maxPerMinute = 60, this.sharedMaxPerMinute = 1200});
 
   bool allow(String ip, DateTime now) {
     final minute = now.millisecondsSinceEpoch ~/ 60000;
@@ -128,8 +148,10 @@ class RateLimiter {
     final next = seen == minute ? count + 1 : 1;
     _windows[ip] = (minute, next);
     if (_windows.length > 10000) _windows.removeWhere((_, w) => w.$1 != minute);
-    return next <= maxPerMinute;
+    return next <= (isShared(ip) ? sharedMaxPerMinute : maxPerMinute);
   }
+
+  static bool isShared(String ip) => ip == 'unknown' || (InternetAddress.tryParse(ip)?.isLoopback ?? false);
 
   Middleware middleware(DateTime Function() clock) => (inner) => (request) {
         if (!allow(clientIp(request), clock())) return _error(429, 'too many requests');

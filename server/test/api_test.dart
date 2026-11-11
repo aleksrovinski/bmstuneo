@@ -97,10 +97,23 @@ void main() {
     expect((await register(device(), ip: '10.0.0.10')).statusCode, isNot(429), reason: 'other clients unaffected');
   });
 
+  test('Clients hidden behind a proxy address share a larger limit', () async {
+    final limiter = RateLimiter(maxPerMinute: 2, sharedMaxPerMinute: 5);
+    expect([for (var i = 0; i < 3; i++) limiter.allow('10.0.0.9', now)], [true, true, false]);
+    for (final proxy in ['127.0.0.1', '::1', 'unknown']) {
+      expect([for (var i = 0; i < 6; i++) limiter.allow(proxy, now)], [true, true, true, true, true, false]);
+    }
+  });
+
   test('Health check and the admin-only manual tick', () async {
     await register(device());
     final health = await handler(Request('GET', Uri.parse('http://localhost/healthz')));
-    expect(jsonDecode(await health.readAsString()), {'ok': true, 'devices': 1});
+    expect(jsonDecode(await health.readAsString()), {'ok': true}, reason: 'public: no usage numbers');
+
+    final stats = Request('GET', Uri.parse('http://localhost/internal/stats'));
+    expect((await handler(stats)).statusCode, 401);
+    final counted = await handler(stats.change(headers: {'authorization': 'Bearer admin-secret'}));
+    expect(jsonDecode(await counted.readAsString()), {'devices': 1});
 
     final anonymous = await handler(Request('POST', Uri.parse('http://localhost/internal/tick')));
     expect(anonymous.statusCode, 401);

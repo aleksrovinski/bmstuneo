@@ -11,10 +11,13 @@ platform and the group UUID.
 |---|---|---|
 | `POST` | `/v1/devices` | `{installationId, secret, platform: apns\|fcm, token, groupUuid?}` → `201` created / `204` updated / `403` wrong secret |
 | `DELETE` | `/v1/devices/{installationId}` | header `x-installation-secret`; idempotent |
-| `GET` | `/healthz` | `{"ok": true, "devices": N}` |
+| `GET` | `/healthz` | `{"ok": true}` |
+| `GET` | `/internal/stats` | `{"devices": N}`; `Authorization: Bearer $ADMIN_TOKEN` |
 | `POST` | `/internal/tick` | runs one scheduling pass now; `Authorization: Bearer $ADMIN_TOKEN`; 404 if no token is configured |
 
-Limits: 8 KB bodies, 60 requests/min per IP. The installation secret is stored as SHA-256 only.
+Limits: 8 KB bodies, 60 requests/min per IP. Requests whose address is loopback (a reverse proxy
+that doesn't know the real client, e.g. Caddy behind Xray without PROXY protocol) share one
+bucket of 1200 requests/min instead. The installation secret is stored as SHA-256 only.
 
 ## Configuration (environment)
 
@@ -26,7 +29,9 @@ Limits: 8 KB bodies, 60 requests/min per IP. The installation secret is stored a
 | `FCM_SERVICE_ACCOUNT_FILE` (or `FCM_SERVICE_ACCOUNT`) | — | Firebase → Project settings → Service accounts → private key JSON |
 | `SYNC_INTERVAL_MINUTES` | `120` | how often each device is woken |
 | `TICK_SECONDS` | `300` | how often the scheduler looks for due devices |
-| `ADMIN_TOKEN` | — | enables `/internal/tick` |
+| `ADMIN_TOKEN` | — | enables `/internal/tick` and `/internal/stats` |
+| `RATE_LIMIT_PER_MINUTE` | `60` | per client IP |
+| `RATE_LIMIT_SHARED_PER_MINUTE` | `1200` | for all clients seen as a loopback address |
 | `DATA_DIR` | `data` | `devices.json` lives here — keep it on a persistent volume |
 | `PORT` | `8080` | |
 
