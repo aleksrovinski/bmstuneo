@@ -9,6 +9,8 @@ import '../providers/favorites_provider.dart';
 import '../services/bmstu_api_service.dart';
 import 'login_screen.dart';
 import '../services/cache_store.dart';
+import '../widgets/teacher_schedule/teacher_lesson_card.dart';
+import '../widgets/teacher_schedule/teacher_search_results.dart';
 
 class TeacherScheduleScreen extends StatefulWidget {
   final String? teacherUuid;
@@ -92,20 +94,23 @@ class _TeacherScheduleScreenState extends State<TeacherScheduleScreen> {
 
   Future<void> _loadCachedAndFetch() async {
     if (_currentUuid == null) return;
-    try {
-      final cachedJson = await CacheStore.instance.read('teacher_sched_${_currentUuid!}');
-      if (cachedJson != null && mounted) {
-        final decoded = jsonDecode(cachedJson) as List;
-        setState(() {
-          _lessons = decoded
-              .map((e) => ScheduleLesson.fromJson(e as Map<String, dynamic>))
-              .toList();
-        });
-      }
-    } catch (e) {
-      debugPrint('[TeacherSchedule] Failed to load cached teacher schedule: $e');
-    }
+    final cached = await _readCachedLessons();
+    if (cached != null && mounted) setState(() => _lessons = cached);
     await _fetchSchedule();
+  }
+
+  /// The schedule saved by the last successful load, or null (none, or unreadable).
+  Future<List<ScheduleLesson>?> _readCachedLessons() async {
+    try {
+      final cached = await CacheStore.instance.read('teacher_sched_${_currentUuid!}');
+      if (cached == null || cached.isEmpty) return null;
+      return (jsonDecode(cached) as List)
+          .map((e) => ScheduleLesson.fromJson(e as Map<String, dynamic>))
+          .toList();
+    } catch (e) {
+      debugPrint('[TeacherSchedule] Corrupted teacher schedule cache ignored: $e');
+      return null;
+    }
   }
 
   Future<void> _resolveTeacherByName(String name, {bool isRetry = false}) async {
@@ -217,22 +222,9 @@ class _TeacherScheduleScreenState extends State<TeacherScheduleScreen> {
 
     // Fast preview from cache if empty
     if (_lessons.isEmpty) {
-      try {
-        final cached = await CacheStore.instance.read('teacher_sched_${_currentUuid!}');
-        if (cached != null && cached.isNotEmpty) {
-          final decoded = jsonDecode(cached) as List;
-          final cachedLessons = decoded
-              .map((e) => ScheduleLesson.fromJson(e as Map<String, dynamic>))
-              .toList();
-          if (mounted && cachedLessons.isNotEmpty) {
-            setState(() {
-              _lessons = cachedLessons;
-            });
-          }
-        }
-      } catch (e) {
-        debugPrint('[TeacherSchedule] Corrupted teacher schedule cache ignored: $e');
-      }
+      final cached = await _readCachedLessons();
+      if (!mounted) return;
+      if (cached != null && cached.isNotEmpty) setState(() => _lessons = cached);
     }
 
     setState(() {
@@ -278,17 +270,9 @@ class _TeacherScheduleScreenState extends State<TeacherScheduleScreen> {
     } catch (e) {
       if (mounted) {
         if (_lessons.isEmpty) {
-          try {
-            final cached = await CacheStore.instance.read('teacher_sched_${_currentUuid!}');
-            if (cached != null && cached.isNotEmpty) {
-              final decoded = jsonDecode(cached) as List;
-              _lessons = decoded
-                  .map((e) => ScheduleLesson.fromJson(e as Map<String, dynamic>))
-                  .toList();
-            }
-          } catch (e) {
-            debugPrint('[TeacherSchedule] Corrupted teacher schedule cache ignored: $e');
-          }
+          final cached = await _readCachedLessons();
+          if (!mounted) return;
+          if (cached != null) _lessons = cached;
         }
         setState(() {
           _isLoading = false;
@@ -399,33 +383,6 @@ class _TeacherScheduleScreenState extends State<TeacherScheduleScreen> {
       return true;
     }).toList()
       ..sort((a, b) => a.time.compareTo(b.time));
-  }
-
-  Color _getTypeColor(String type) {
-    switch (type.toLowerCase()) {
-      case 'lecture':
-      case 'лекция':
-        return const Color(0xFF3B82F6);
-      case 'seminar':
-      case 'семинар':
-        return const Color(0xFF10B981);
-      case 'lab':
-      case 'лабораторная':
-      case 'лабораторная работа':
-        return const Color(0xFFF59E0B);
-      case 'military':
-      case 'военная кафедра':
-      case 'вк':
-        return const Color(0xFF15803D);
-      case 'elective':
-      case 'факультатив':
-        return const Color(0xFF0EA5E9);
-      case 'consultation':
-      case 'консультация':
-        return const Color(0xFFE11D48);
-      default:
-        return const Color(0xFF8B5CF6);
-    }
   }
 
   @override
@@ -541,226 +498,13 @@ class _TeacherScheduleScreenState extends State<TeacherScheduleScreen> {
         ],
       ),
       body: _isSearching
-          ? _buildSearchResultsView(theme, isDark)
+          ? TeacherSearchResults(
+              isLoading: _isSearchLoading,
+              query: _searchController.text,
+              results: _searchResults,
+              onSelect: _selectTeacher,
+            )
           : _buildScheduleView(theme, isDark),
-    );
-  }
-
-  Widget _buildSearchResultsView(ThemeData theme, bool isDark) {
-    if (_isSearchLoading) {
-      return const Center(child: CircularProgressIndicator());
-    }
-
-    FavoritesProvider? fav;
-    try {
-      fav = context.watch<FavoritesProvider>();
-    } catch (_) {}
-    final favTeachers = fav?.favoriteTeachers ?? const [];
-
-    if (_searchController.text.trim().isEmpty) {
-      final auth = context.read<AuthProvider>();
-      return ListView(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-        children: [
-          if (favTeachers.isNotEmpty) ...[
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
-              child: Row(
-                children: [
-                  const Icon(Icons.star_rounded, color: Colors.amber, size: 20),
-                  const SizedBox(width: 8),
-                  Text(
-                    'Избранные преподаватели',
-                    style: TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w800,
-                      color: theme.colorScheme.onSurface,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 8),
-            ...favTeachers.map((ft) {
-              return Padding(
-                padding: const EdgeInsets.only(bottom: 8),
-                child: Material(
-                  color: isDark
-                      ? theme.colorScheme.surfaceContainer
-                      : theme.colorScheme.surfaceContainerLow,
-                  borderRadius: BorderRadius.circular(16),
-                  child: ListTile(
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-                    leading: CircleAvatar(
-                      backgroundColor: Colors.amber.withValues(alpha: 0.18),
-                      child: const Icon(Icons.star_rounded, color: Colors.amber, size: 22),
-                    ),
-                    title: Text(
-                      ft.title,
-                      style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
-                    ),
-                    subtitle: const Text('Преподаватель МГТУ', style: TextStyle(fontSize: 12)),
-                    trailing: const Icon(Icons.chevron_right_rounded),
-                    onTap: () => _selectTeacher(ft),
-                  ),
-                ),
-              );
-            }),
-            const Divider(height: 36),
-          ],
-          Center(
-            child: Padding(
-              padding: const EdgeInsets.all(24),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(
-                    Icons.person_search_rounded,
-                    size: 64,
-                    color: theme.colorScheme.primary.withValues(alpha: 0.5),
-                  ),
-                  const SizedBox(height: 16),
-                  Text(
-                    'Поиск по преподавателям',
-                    style: theme.textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    auth.isGuest
-                        ? 'В гостевом режиме доступен поиск по преподавателям текущей группы. Для поиска по всем преподавателям МГТУ войдите в аккаунт ЛКС.'
-                        : 'Введите фамилию преподавателя МГТУ им. Баумана для просмотра его полного расписания',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      fontSize: 14,
-                      color: theme.colorScheme.onSurfaceVariant,
-                    ),
-                  ),
-                  if (auth.isGuest) ...[
-                    const SizedBox(height: 16),
-                    FilledButton.tonalIcon(
-                      onPressed: () {
-                        Navigator.of(context).push(
-                          MaterialPageRoute(builder: (_) => const LoginScreen()),
-                        );
-                      },
-                      icon: const Icon(Icons.login_rounded),
-                      label: const Text('Войти в ЛКС'),
-                    ),
-                  ],
-                ],
-              ),
-            ),
-          ),
-        ],
-      );
-    }
-
-    if (_searchResults.isEmpty) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(32),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                Icons.search_off_rounded,
-                size: 56,
-                color: theme.colorScheme.outline,
-              ),
-              const SizedBox(height: 16),
-              Text(
-                'Преподаватель не найден',
-                style: theme.textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-              const SizedBox(height: 6),
-              Text(
-                'Попробуйте изменить запрос или ввести только фамилию',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: 14,
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
-              ),
-            ],
-          ),
-        ),
-      );
-    }
-
-    return ListView.separated(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      itemCount: _searchResults.length,
-      separatorBuilder: (context, index) => const SizedBox(height: 8),
-      itemBuilder: (context, index) {
-        final item = _searchResults[index];
-        final isFav = fav?.isTeacherFavorite(item.uuid) ?? false;
-
-        return Material(
-          color: isDark
-              ? theme.colorScheme.surfaceContainer
-              : theme.colorScheme.surfaceContainerLow,
-          borderRadius: BorderRadius.circular(16),
-          child: InkWell(
-            borderRadius: BorderRadius.circular(16),
-            onTap: () => _selectTeacher(item),
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Row(
-                children: [
-                  CircleAvatar(
-                    radius: 20,
-                    backgroundColor: theme.colorScheme.primaryContainer,
-                    child: Icon(
-                      Icons.person_outline_rounded,
-                      size: 20,
-                      color: theme.colorScheme.onPrimaryContainer,
-                    ),
-                  ),
-                  const SizedBox(width: 14),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          item.title,
-                          style: const TextStyle(
-                            fontSize: 15,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          'Преподаватель МГТУ',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: theme.colorScheme.onSurfaceVariant,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  IconButton(
-                    icon: Icon(
-                      isFav ? Icons.star_rounded : Icons.star_outline_rounded,
-                      color: isFav ? Colors.amber : theme.colorScheme.outline,
-                    ),
-                    tooltip: isFav ? 'Удалить из избранных' : 'Добавить в избранные',
-                    onPressed: fav == null ? null : () => fav!.toggleTeacherFavorite(item),
-                  ),
-                  Icon(
-                    Icons.chevron_right_rounded,
-                    color: theme.colorScheme.outline,
-                  ),
-                ],
-              ),
-            ),
-          ),
-        );
-      },
     );
   }
 
@@ -1042,7 +786,7 @@ class _TeacherScheduleScreenState extends State<TeacherScheduleScreen> {
                   itemCount: dayLessons.length,
                   itemBuilder: (context, lIdx) {
                     final lesson = dayLessons[lIdx];
-                    return _buildTeacherLessonCard(lesson, theme, isDark);
+                    return TeacherLessonCard(lesson: lesson);
                   },
                 ),
               );
@@ -1076,164 +820,4 @@ class _TeacherScheduleScreenState extends State<TeacherScheduleScreen> {
     );
   }
 
-  Widget _buildTeacherLessonCard(
-    ScheduleLesson lesson,
-    ThemeData theme,
-    bool isDark,
-  ) {
-    final typeColor = _getTypeColor(lesson.actType);
-
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-      decoration: BoxDecoration(
-        color: isDark
-            ? theme.colorScheme.surfaceContainer
-            : theme.colorScheme.surfaceContainerLow,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(
-          color: theme.colorScheme.outlineVariant.withValues(alpha: 0.6),
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: isDark ? 0.2 : 0.04),
-            blurRadius: 10,
-            offset: const Offset(0, 3),
-          ),
-        ],
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Top row: Pair number, time, and type badge
-            Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: isDark
-                        ? theme.colorScheme.surfaceContainerHigh
-                        : theme.colorScheme.surface,
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Text(
-                    lesson.time > 0 ? '${lesson.time} пара' : 'Занятие',
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w700,
-                      color: theme.colorScheme.onSurfaceVariant,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Text(
-                  '${lesson.startTime} — ${lesson.endTime}',
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                    color: theme.colorScheme.onSurfaceVariant,
-                  ),
-                ),
-                const Spacer(),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: typeColor.withValues(alpha: 0.15),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Text(
-                    lesson.actTypeTitle,
-                    style: TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w700,
-                      color: typeColor,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-
-            // Discipline title
-            Text(
-              lesson.disciplineTitle,
-              style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w700,
-                color: theme.colorScheme.onSurface,
-                height: 1.25,
-              ),
-            ),
-            const SizedBox(height: 10),
-
-            // Audience & Group row
-            Row(
-              children: [
-                // Classroom
-                Expanded(
-                  child: Row(
-                    children: [
-                      Icon(
-                        Icons.meeting_room_outlined,
-                        size: 16,
-                        color: theme.colorScheme.onSurfaceVariant,
-                      ),
-                      const SizedBox(width: 6),
-                      Flexible(
-                        child: Text(
-                          lesson.audiencesFormatted,
-                          style: TextStyle(
-                            fontSize: 13,
-                            color: theme.colorScheme.onSurfaceVariant,
-                          ),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                // Group / Stream being taught
-                if (lesson.streamName != null && lesson.streamName!.isNotEmpty)
-                  Expanded(
-                    child: Row(
-                      children: [
-                        Icon(
-                          Icons.groups_rounded,
-                          size: 16,
-                          color: theme.colorScheme.primary,
-                        ),
-                        const SizedBox(width: 6),
-                        Flexible(
-                          child: Text(
-                            lesson.streamName!,
-                            style: TextStyle(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w600,
-                              color: theme.colorScheme.primary,
-                            ),
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-              ],
-            ),
-
-            if (!lesson.isEveryWeek) ...[
-              const SizedBox(height: 8),
-              Text(
-                'Периодичность: ${lesson.weekTitle}',
-                style: TextStyle(
-                  fontSize: 11,
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
-              ),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
 }

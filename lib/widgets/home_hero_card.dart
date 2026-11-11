@@ -18,22 +18,40 @@ class HomeHeroCard extends StatefulWidget {
   State<HomeHeroCard> createState() => _HomeHeroCardState();
 }
 
-class _HomeHeroCardState extends State<HomeHeroCard> {
+class _HomeHeroCardState extends State<HomeHeroCard> with WidgetsBindingObserver {
   Timer? _timer;
 
   @override
   void initState() {
     super.initState();
-    // Isolated 1-second ticker for real-time countdown
-    _timer = Timer.periodic(const Duration(seconds: 1), (_) {
+    WidgetsBinding.instance.addObserver(this);
+    _startTicker();
+  }
+
+  // Isolated 1-second ticker for the real-time countdown
+  void _startTicker() {
+    _timer ??= Timer.periodic(const Duration(seconds: 1), (_) {
       if (mounted) {
         setState(() {});
       }
     });
   }
 
+  // Nobody sees the countdown while the app is in the background: don't wake up for it
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _startTicker();
+      if (mounted) setState(() {});
+    } else if (state == AppLifecycleState.paused || state == AppLifecycleState.hidden) {
+      _timer?.cancel();
+      _timer = null;
+    }
+  }
+
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _timer?.cancel();
     super.dispose();
   }

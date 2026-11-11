@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../models/user_profile.dart';
@@ -20,6 +21,21 @@ class StudentIdCard extends StatefulWidget {
 
 class _StudentIdCardState extends State<StudentIdCard> {
   bool _isExpanded = false;
+
+  // The photo arrives as a data URI. Decoded once per photo: decoding in build()
+  // redid the base64 work on every rebuild and handed Image.memory a new byte list
+  // each time, so the image itself was decoded again as well.
+  String? _decodedPhoto;
+  Uint8List? _decodedBytes;
+
+  Uint8List _photoBytes(String dataUri) {
+    if (_decodedPhoto != dataUri || _decodedBytes == null) {
+      final commaIndex = dataUri.indexOf(',');
+      _decodedBytes = base64Decode(commaIndex != -1 ? dataUri.substring(commaIndex + 1) : dataUri);
+      _decodedPhoto = dataUri;
+    }
+    return _decodedBytes!;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -362,9 +378,7 @@ class _StudentIdCardState extends State<StudentIdCard> {
     final photo = user.photoUrl!;
     if (photo.startsWith('data:image')) {
       try {
-        final commaIndex = photo.indexOf(',');
-        final base64Str = commaIndex != -1 ? photo.substring(commaIndex + 1) : photo;
-        final bytes = base64Decode(base64Str);
+        final bytes = _photoBytes(photo);
         return Image.memory(
           bytes,
           fit: BoxFit.cover,
