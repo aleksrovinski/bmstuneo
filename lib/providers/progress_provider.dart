@@ -4,6 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/discipline_progress.dart';
 import '../models/sync_status.dart';
 import '../services/bmstu_api_service.dart';
+import '../services/cache_store.dart';
 
 enum DeadlineStatus {
   passed,
@@ -212,10 +213,9 @@ class ProgressProvider with ChangeNotifier {
 
   Future<void> _saveProgressToCache(String stageUuid, List<DisciplineProgress> disciplines) async {
     try {
-      final prefs = await SharedPreferences.getInstance();
       final listJson = disciplines.map((d) => d.toJson()).toList();
-      await prefs.setString('$cacheProgressPrefix$stageUuid', jsonEncode(listJson));
-      await prefs.setString('$cacheProgressTimePrefix$stageUuid', DateTime.now().toIso8601String());
+      await CacheStore.instance.write('$cacheProgressPrefix$stageUuid', jsonEncode(listJson));
+      await CacheStore.instance.write('$cacheProgressTimePrefix$stageUuid', DateTime.now().toIso8601String());
     } catch (e) {
       debugPrint('[ProgressProvider] Failed to cache progress: $e');
     }
@@ -223,8 +223,7 @@ class ProgressProvider with ChangeNotifier {
 
   Future<List<DisciplineProgress>?> _loadProgressFromCache(String stageUuid) async {
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final raw = prefs.getString('$cacheProgressPrefix$stageUuid');
+      final raw = await CacheStore.instance.read('$cacheProgressPrefix$stageUuid');
       if (raw == null || raw.isEmpty) return null;
       final decoded = jsonDecode(raw) as List;
       return decoded.map((e) => DisciplineProgress.fromJson(e as Map<String, dynamic>)).toList();
@@ -236,8 +235,7 @@ class ProgressProvider with ChangeNotifier {
 
   Future<DateTime?> _loadCacheTimestamp(String stageUuid) async {
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final raw = prefs.getString('$cacheProgressTimePrefix$stageUuid');
+      final raw = await CacheStore.instance.read('$cacheProgressTimePrefix$stageUuid');
       if (raw != null) return DateTime.tryParse(raw);
     } catch (e) {
       debugPrint('[ProgressProvider] Failed to read progress cache time: $e');

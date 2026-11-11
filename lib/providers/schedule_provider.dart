@@ -7,6 +7,7 @@ import '../models/sync_status.dart';
 import '../services/bmstu_api_service.dart';
 import '../services/bmstu_groups_catalog.dart';
 import '../services/widget_sync_service.dart';
+import '../services/cache_store.dart';
 
 class ScheduleProvider with ChangeNotifier {
   static const _cachePrefix = 'cached_sched_v1_';
@@ -69,10 +70,9 @@ class ScheduleProvider with ChangeNotifier {
 
   Future<void> _saveScheduleToCache(String groupUuid, List<ScheduleLesson> lessons) async {
     try {
-      final prefs = await SharedPreferences.getInstance();
       final jsonList = lessons.map((l) => l.toJson()).toList();
-      await prefs.setString('$_cachePrefix$groupUuid', jsonEncode(jsonList));
-      await prefs.setString('$_cacheTimePrefix$groupUuid', DateTime.now().toIso8601String());
+      await CacheStore.instance.write('$_cachePrefix$groupUuid', jsonEncode(jsonList));
+      await CacheStore.instance.write('$_cacheTimePrefix$groupUuid', DateTime.now().toIso8601String());
     } catch (e) {
       debugPrint('[ScheduleProvider] Failed to cache schedule: $e');
     }
@@ -80,8 +80,7 @@ class ScheduleProvider with ChangeNotifier {
 
   Future<List<ScheduleLesson>?> _loadScheduleFromCache(String groupUuid) async {
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final raw = prefs.getString('$_cachePrefix$groupUuid');
+      final raw = await CacheStore.instance.read('$_cachePrefix$groupUuid');
       if (raw == null || raw.isEmpty) return null;
       final decoded = jsonDecode(raw) as List;
       return decoded.map((e) => ScheduleLesson.fromJson(e as Map<String, dynamic>)).toList();
@@ -93,8 +92,7 @@ class ScheduleProvider with ChangeNotifier {
 
   Future<DateTime?> _loadCacheTimestamp(String groupUuid) async {
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final raw = prefs.getString('$_cacheTimePrefix$groupUuid');
+      final raw = await CacheStore.instance.read('$_cacheTimePrefix$groupUuid');
       if (raw != null) return DateTime.tryParse(raw);
     } catch (e) {
       debugPrint('[ScheduleProvider] Failed to read schedule cache time: $e');

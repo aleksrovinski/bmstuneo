@@ -20,6 +20,7 @@ import 'progress_alerts.dart';
 import 'push_channel.dart';
 import 'secure_cookie_storage.dart';
 import 'widget_sync_service.dart';
+import 'cache_store.dart';
 
 /// Entry point the OS calls in the background (Android WorkManager, iOS Background
 /// App Refresh). A silent push will call [BackgroundSync.run] the same way.
@@ -206,7 +207,7 @@ class BackgroundSync {
 
     final week = (await service.getCurrentWeek())?.weekNumber ?? 1;
     final cacheKey = '${ProgressProvider.cacheProgressPrefix}$stageUuid';
-    final previous = _decodeProgress(prefs.getString(cacheKey));
+    final previous = _decodeProgress(await CacheStore.instance.read(cacheKey));
     final marks = ManualMark.decodeAll(prefs.getString(ProgressProvider.manualMarksKey));
     final notified = (prefs.getStringList(_notifiedKey) ?? const <String>[]).toSet();
 
@@ -218,8 +219,9 @@ class BackgroundSync {
     );
 
     // The app shows the same fresh data next time it opens
-    await prefs.setString(cacheKey, jsonEncode(fresh.map((d) => d.toJson()).toList()));
-    await prefs.setString('${ProgressProvider.cacheProgressTimePrefix}$stageUuid', DateTime.now().toIso8601String());
+    await CacheStore.instance.write(cacheKey, jsonEncode(fresh.map((d) => d.toJson()).toList()));
+    await CacheStore.instance.write(
+        '${ProgressProvider.cacheProgressTimePrefix}$stageUuid', DateTime.now().toIso8601String());
 
     if (alerts.isNotEmpty) {
       final remembered = [...prefs.getStringList(_notifiedKey) ?? const <String>[], ...alerts.map((a) => a.key)];

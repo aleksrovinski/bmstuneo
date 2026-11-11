@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'bmstu_api_service.dart';
 import 'bmstu_groups_catalog.dart';
+import 'cache_store.dart';
 
 /// Keeps [BmstuGroupsCatalog] in sync with the live LKS structure.
 ///
@@ -40,7 +41,7 @@ class GroupsCatalogSync {
       updatedAt = millis != null ? DateTime.fromMillisecondsSinceEpoch(millis) : null;
 
       if (!BmstuGroupsCatalog.isLive) {
-        final cached = prefs.getString(_keyCatalog);
+        final cached = await CacheStore.instance.read(_keyCatalog);
         if (cached != null) {
           final groups = (jsonDecode(cached) as List)
               .whereType<Map<String, dynamic>>()
@@ -64,7 +65,7 @@ class GroupsCatalogSync {
       final groups = await api.fetchGroupsCatalog();
       if (groups.isEmpty) return changed;
       BmstuGroupsCatalog.useLive(groups);
-      await prefs?.setString(_keyCatalog, jsonEncode(groups.map((g) => g.toJson()).toList()));
+      await CacheStore.instance.write(_keyCatalog, jsonEncode(groups.map((g) => g.toJson()).toList()));
       await prefs?.setInt(_keyUpdatedAt, now.millisecondsSinceEpoch);
       return true;
     } catch (e) {

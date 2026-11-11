@@ -8,7 +8,6 @@ import 'package:bmstu_neo/models/discipline_progress.dart';
 import 'package:bmstu_neo/models/physical_culture.dart';
 import 'package:bmstu_neo/services/bmstu_groups_catalog.dart';
 import 'package:bmstu_neo/services/bmstu_api_service.dart';
-import 'package:bmstu_neo/services/cache_service.dart';
 import 'package:bmstu_neo/services/auth_storage.dart';
 import 'package:bmstu_neo/providers/favorites_provider.dart';
 import 'package:bmstu_neo/providers/theme_provider.dart';
@@ -61,36 +60,6 @@ void main() {
       await fav.toggleTeacherFavorite(teacher);
       expect(fav.isTeacherFavorite('teacher-uuid-1'), isFalse);
       expect(fav.favoriteTeachers.isEmpty, isTrue);
-    });
-  });
-
-  group('AppCacheManager Tests', () {
-    test('Sets and gets typed data with stats calculation', () async {
-      final cache = AppCacheManager.instance;
-      await cache.clearAll();
-
-      await cache.set(
-        key: 'bmstu_cache_test_key',
-        data: {'name': 'Бауманка', 'groups': 3400},
-      );
-
-      final item = await cache.get<Map<String, dynamic>>(
-        key: 'bmstu_cache_test_key',
-        fromJson: (json) => Map<String, dynamic>.from(json as Map),
-      );
-
-      expect(item, isNotNull);
-      expect(item!.data['name'], 'Бауманка');
-      expect(item.data['groups'], 3400);
-      expect(item.sizeBytes, greaterThan(0));
-
-      final stats = await cache.getStats();
-      expect(stats.totalSizeBytes, greaterThan(0));
-      expect(stats.entryCount, greaterThan(0));
-
-      await cache.clearAll();
-      final statsAfter = await cache.getStats();
-      expect(statsAfter.totalSizeBytes, 0);
     });
   });
 

@@ -1,9 +1,9 @@
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import '../models/physical_culture.dart';
 import '../models/sync_status.dart';
 import '../services/bmstu_api_service.dart';
+import '../services/cache_store.dart';
 
 class FvProvider with ChangeNotifier {
   static const _cacheFvPrefix = 'cached_fv_v1_';
@@ -34,9 +34,8 @@ class FvProvider with ChangeNotifier {
 
   Future<void> _saveFvToCache(String stageUuid, PhysicalCultureData data) async {
     try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString('$_cacheFvPrefix$stageUuid', jsonEncode(data.toJson()));
-      await prefs.setString('$_cacheFvTimePrefix$stageUuid', DateTime.now().toIso8601String());
+      await CacheStore.instance.write('$_cacheFvPrefix$stageUuid', jsonEncode(data.toJson()));
+      await CacheStore.instance.write('$_cacheFvTimePrefix$stageUuid', DateTime.now().toIso8601String());
     } catch (e) {
       debugPrint('[FvProvider] Failed to cache PE data: $e');
     }
@@ -44,8 +43,7 @@ class FvProvider with ChangeNotifier {
 
   Future<PhysicalCultureData?> _loadFvFromCache(String stageUuid) async {
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final raw = prefs.getString('$_cacheFvPrefix$stageUuid');
+      final raw = await CacheStore.instance.read('$_cacheFvPrefix$stageUuid');
       if (raw == null || raw.isEmpty) return null;
       final decoded = jsonDecode(raw) as Map<String, dynamic>;
       return PhysicalCultureData.fromJson(decoded);
@@ -57,8 +55,7 @@ class FvProvider with ChangeNotifier {
 
   Future<DateTime?> _loadCacheTimestamp(String stageUuid) async {
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final raw = prefs.getString('$_cacheFvTimePrefix$stageUuid');
+      final raw = await CacheStore.instance.read('$_cacheFvTimePrefix$stageUuid');
       if (raw != null) return DateTime.tryParse(raw);
     } catch (e) {
       debugPrint('[FvProvider] Failed to read PE cache time: $e');

@@ -2,13 +2,13 @@ import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import '../models/schedule_lesson.dart';
 import '../providers/auth_provider.dart';
 import '../providers/schedule_provider.dart';
 import '../providers/favorites_provider.dart';
 import '../services/bmstu_api_service.dart';
 import 'login_screen.dart';
+import '../services/cache_store.dart';
 
 class TeacherScheduleScreen extends StatefulWidget {
   final String? teacherUuid;
@@ -93,8 +93,7 @@ class _TeacherScheduleScreenState extends State<TeacherScheduleScreen> {
   Future<void> _loadCachedAndFetch() async {
     if (_currentUuid == null) return;
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final cachedJson = prefs.getString('teacher_sched_${_currentUuid!}');
+      final cachedJson = await CacheStore.instance.read('teacher_sched_${_currentUuid!}');
       if (cachedJson != null && mounted) {
         final decoded = jsonDecode(cachedJson) as List;
         setState(() {
@@ -219,8 +218,7 @@ class _TeacherScheduleScreenState extends State<TeacherScheduleScreen> {
     // Fast preview from cache if empty
     if (_lessons.isEmpty) {
       try {
-        final prefs = await SharedPreferences.getInstance();
-        final cached = prefs.getString('teacher_sched_${_currentUuid!}');
+        final cached = await CacheStore.instance.read('teacher_sched_${_currentUuid!}');
         if (cached != null && cached.isNotEmpty) {
           final decoded = jsonDecode(cached) as List;
           final cachedLessons = decoded
@@ -255,9 +253,8 @@ class _TeacherScheduleScreenState extends State<TeacherScheduleScreen> {
 
         // Save to cache
         try {
-          final prefs = await SharedPreferences.getInstance();
           final jsonString = jsonEncode(fetched.map((l) => l.toJson()).toList());
-          await prefs.setString('teacher_sched_${_currentUuid!}', jsonString);
+          await CacheStore.instance.write('teacher_sched_${_currentUuid!}', jsonString);
         } catch (e) {
           debugPrint('[TeacherSchedule] Failed to cache teacher schedule: $e');
         }
@@ -282,8 +279,7 @@ class _TeacherScheduleScreenState extends State<TeacherScheduleScreen> {
       if (mounted) {
         if (_lessons.isEmpty) {
           try {
-            final prefs = await SharedPreferences.getInstance();
-            final cached = prefs.getString('teacher_sched_${_currentUuid!}');
+            final cached = await CacheStore.instance.read('teacher_sched_${_currentUuid!}');
             if (cached != null && cached.isNotEmpty) {
               final decoded = jsonDecode(cached) as List;
               _lessons = decoded

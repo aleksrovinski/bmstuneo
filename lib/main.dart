@@ -26,6 +26,7 @@ import 'screens/main_navigation_screen.dart';
 
 import 'widgets/bmstu_neo_logo.dart';
 import 'constants/app_version.dart';
+import 'services/cache_store.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -34,6 +35,8 @@ void main() {
   PushChannel.listen();
   // Tapping a notification opens its screen (MainNavigationScreen)
   AppNotifications.listenForTaps();
+  // Older versions cached downloaded data in preferences: move what is left into files
+  CacheStore.instance.migrateLegacy().catchError((Object e) => debugPrint('[main] Cache not migrated: $e'));
   // While notifications are on: keep the periodic check scheduled and the push token current
   BackgroundSync.resume().catchError((Object e) => debugPrint('[main] Background sync not resumed: $e'));
 

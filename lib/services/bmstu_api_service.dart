@@ -4,7 +4,6 @@ import 'package:flutter/foundation.dart';
 import 'package:dio/dio.dart';
 import 'package:cookie_jar/cookie_jar.dart';
 import 'package:dio_cookie_manager/dio_cookie_manager.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import '../models/user_profile.dart';
 import '../models/current_week.dart';
 import '../models/schedule_lesson.dart';
@@ -12,6 +11,7 @@ import '../models/discipline_progress.dart';
 import '../models/physical_culture.dart';
 import '../models/session_result.dart';
 import 'bmstu_groups_catalog.dart';
+import 'cache_store.dart';
 
 class BmstuAuthException implements Exception {
   final String message;
@@ -998,12 +998,11 @@ class BmstuApiService {
     bool forceRefresh = false,
   }) async {
     const cacheKey = 'bmstu_session_results_cache';
-    final prefs = await SharedPreferences.getInstance();
     final targetStage = (stageUuid != null && stageUuid.isNotEmpty) ? stageUuid : _lastStageUuid;
 
     // 1. If not forcing refresh, try cache first if available
     if (!forceRefresh) {
-      final cachedJson = prefs.getString(cacheKey);
+      final cachedJson = await CacheStore.instance.read(cacheKey);
       if (cachedJson != null && cachedJson.isNotEmpty) {
         try {
           final decoded = jsonDecode(cachedJson) as List;
@@ -1014,7 +1013,7 @@ class BmstuApiService {
           if (cachedList.isNotEmpty) {
             // Trigger background refresh if authenticated
             if (_isAuthenticated) {
-              unawaited(_fetchAndCacheSessionResults(prefs, cacheKey, stageUuid: targetStage)
+              unawaited(_fetchAndCacheSessionResults(cacheKey, stageUuid: targetStage)
                   .catchError((Object e) {
                 debugPrint('[BmstuApiService] Background session refresh failed: $e');
                 return <SemesterSession>[];
@@ -1030,11 +1029,11 @@ class BmstuApiService {
 
     // 2. Fetch live data
     try {
-      final liveSessions = await _fetchAndCacheSessionResults(prefs, cacheKey, stageUuid: targetStage);
+      final liveSessions = await _fetchAndCacheSessionResults(cacheKey, stageUuid: targetStage);
       if (liveSessions.isNotEmpty) return liveSessions;
     } catch (e) {
       // 3. On error, fallback to cache
-      final cachedJson = prefs.getString(cacheKey);
+      final cachedJson = await CacheStore.instance.read(cacheKey);
       if (cachedJson != null && cachedJson.isNotEmpty) {
         try {
           final decoded = jsonDecode(cachedJson) as List;
@@ -1053,7 +1052,6 @@ class BmstuApiService {
   }
 
   Future<List<SemesterSession>> _fetchAndCacheSessionResults(
-    SharedPreferences prefs,
     String cacheKey, {
     String? stageUuid,
   }) async {
@@ -1087,7 +1085,7 @@ class BmstuApiService {
           final sessions = parseSessionJson(Map<String, dynamic>.from(resp.data as Map));
           if (sessions.isNotEmpty) {
             final jsonList = sessions.map((s) => s.toJson()).toList();
-            await prefs.setString(cacheKey, jsonEncode(jsonList));
+            await CacheStore.instance.write(cacheKey, jsonEncode(jsonList));
             return sessions;
           }
         }
@@ -1107,7 +1105,7 @@ class BmstuApiService {
         final sessions = parseSessionHtml(html);
         if (sessions.isNotEmpty) {
           final jsonList = sessions.map((s) => s.toJson()).toList();
-          await prefs.setString(cacheKey, jsonEncode(jsonList));
+          await CacheStore.instance.write(cacheKey, jsonEncode(jsonList));
           return sessions;
         }
       }
