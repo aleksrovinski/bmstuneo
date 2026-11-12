@@ -15,6 +15,7 @@ import '../widgets/offline_status_banner.dart';
 import '../widgets/mail_inbox_button.dart';
 import '../models/nearest_pe_lesson.dart';
 import '../services/widget_sync_service.dart';
+import '../constants/moscow_time.dart';
 
 class HomeScreen extends StatefulWidget {
   final VoidCallback onOpenSchedule;
@@ -59,7 +60,7 @@ class _HomeScreenState extends State<HomeScreen> {
     final liveStatus = sched.getLivePairStatus();
     final nearestDeadlines = prog.getNearestDeadlines(currentWeekNum, limit: 3);
     final todayLessons = sched.lessonsForToday;
-    final now = DateTime.now();
+    final now = MoscowTime.now();
     final nowMinutes = now.hour * 60 + now.minute;
     int minutesOf(String hhmm) {
       final parts = hhmm.split(':');

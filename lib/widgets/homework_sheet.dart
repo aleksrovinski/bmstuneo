@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../models/homework_note.dart';
 import '../providers/homework_provider.dart';
 import '../providers/schedule_provider.dart';
+import '../constants/moscow_time.dart';
 
 const _months = ['янв.', 'февр.', 'марта', 'апр.', 'мая', 'июня', 'июля', 'авг.', 'сент.', 'окт.', 'нояб.', 'дек.'];
 const _weekdays = ['пн', 'вт', 'ср', 'чт', 'пт', 'сб', 'вс'];
@@ -74,14 +75,14 @@ class _HomeworkSheetState extends State<HomeworkSheet> {
       discipline,
       sched.allLessons,
       currentWeekIsNumerator: sched.currentWeek?.isNumerator ?? true,
-      now: DateTime.now(),
+      now: MoscowTime.now(),
     );
     if (next == null) return null;
     return (start: next.start, where: '${next.lesson.actTypeTitle}, ${next.lesson.audiencesFormatted}');
   }
 
   Future<void> _pickDeadline() async {
-    final now = DateTime.now();
+    final now = MoscowTime.now();
     final picked = await showDatePicker(
       context: context,
       initialDate: _deadline ?? now.add(const Duration(days: 7)),
@@ -108,7 +109,7 @@ class _HomeworkSheetState extends State<HomeworkSheet> {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
     final sched = context.watch<ScheduleProvider>();
-    final now = DateTime.now();
+    final now = MoscowTime.now();
 
     final disciplines = {for (final l in sched.allLessons) l.disciplineTitle}.toList()..sort();
     if (_discipline != null && !disciplines.contains(_discipline)) disciplines.insert(0, _discipline!);
@@ -238,7 +239,7 @@ class HomeworkTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final homework = context.read<HomeworkProvider>();
-    final now = DateTime.now();
+    final now = MoscowTime.now();
     final overdue = note.isOverdue(now);
 
     return Dismissible(

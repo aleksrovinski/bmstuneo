@@ -1,5 +1,6 @@
 import 'physical_culture.dart';
 import 'schedule_lesson.dart';
+import '../constants/moscow_time.dart';
 
 class NearestPeLesson {
   final String dayTitle; // e.g. "Сегодня", "Завтра", "Во вторник"
@@ -84,7 +85,7 @@ class NearestPeLesson {
     required bool isCurrentWeekNumerator,
     DateTime? mockNow,
   }) {
-    final now = mockNow ?? DateTime.now();
+    final now = mockNow ?? MoscowTime.now();
     final currentDay = now.weekday; // 1 = Mon ... 7 = Sun
     final currentMinutes = now.hour * 60 + now.minute;
 

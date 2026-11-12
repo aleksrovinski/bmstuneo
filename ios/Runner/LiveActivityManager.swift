@@ -89,7 +89,7 @@ class LiveActivityManager {
         lessonList.sort { $0.startMin < $1.startMin }
 
         let now = Date()
-        let cal = Calendar.current
+        let cal = Calendar.moscow
         let currentMinutes = cal.component(.hour, from: now) * 60 + cal.component(.minute, from: now)
 
         guard let firstLesson = lessonList.first, let lastLesson = lessonList.last else {
@@ -201,11 +201,20 @@ class LiveActivityManager {
     }
 
     private func dateFromMinutes(_ minutes: Int, baseDate: Date = Date()) -> Date {
-        let cal = Calendar.current
+        let cal = Calendar.moscow
         var comp = cal.dateComponents([.year, .month, .day], from: baseDate)
         comp.hour = minutes / 60
         comp.minute = minutes % 60
         comp.second = 0
         return cal.date(from: comp) ?? baseDate
     }
+}
+
+extension Calendar {
+    /// BMSTU pairs follow Moscow time wherever the phone is (lib/constants/moscow_time.dart)
+    static let moscow: Calendar = {
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = TimeZone(identifier: "Europe/Moscow") ?? .current
+        return cal
+    }()
 }

@@ -104,7 +104,7 @@ object LiveNotificationManager {
                 return
             }
 
-            val cal = Calendar.getInstance()
+            val cal = MoscowTime.calendar()
             val currentMinutes = cal.get(Calendar.HOUR_OF_DAY) * 60 + cal.get(Calendar.MINUTE)
 
             // Parse lessons into list
@@ -210,7 +210,7 @@ object LiveNotificationManager {
                 cancelNotification(context)
                 return
             }
-            val countdownCal = Calendar.getInstance().apply {
+            val countdownCal = MoscowTime.calendar().apply {
                 set(Calendar.HOUR_OF_DAY, countdownTo / 60)
                 set(Calendar.MINUTE, countdownTo % 60)
                 set(Calendar.SECOND, 0)
@@ -253,7 +253,7 @@ object LiveNotificationManager {
             val exactAllowed = Build.VERSION.SDK_INT < Build.VERSION_CODES.S || alarmManager.canScheduleExactAlarms()
 
             if (dayStarted && boundary - currentMinutes > 1) {
-                val tick = Calendar.getInstance().apply {
+                val tick = MoscowTime.calendar().apply {
                     add(Calendar.MINUTE, 1)
                     set(Calendar.SECOND, 1)
                     set(Calendar.MILLISECOND, 0)
@@ -266,7 +266,7 @@ object LiveNotificationManager {
                 return
             }
 
-            val target = Calendar.getInstance().apply {
+            val target = MoscowTime.calendar().apply {
                 set(Calendar.HOUR_OF_DAY, boundary / 60)
                 set(Calendar.MINUTE, boundary % 60)
                 set(Calendar.SECOND, 2)

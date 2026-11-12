@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../providers/schedule_provider.dart';
+import '../constants/moscow_time.dart';
 
 class WidgetSyncService {
   static const MethodChannel _channel = MethodChannel('ru.bmstu.neo/widget');
@@ -33,7 +34,7 @@ class WidgetSyncService {
       // Switch to tomorrow if pairs today are finished or there are no pairs today
       final isTomorrow = (liveStatus.type == LivePairType.finishedForToday || todayLessons.isEmpty);
 
-      final now = DateTime.now();
+      final now = MoscowTime.now();
       final targetDayTitle = isTomorrow
           ? 'Завтра (${scheduleProvider.tomorrowDayTitle})'
           : 'Сегодня (${_getWeekdayName(now.weekday)})';
@@ -57,7 +58,7 @@ class WidgetSyncService {
 
       final payload = {
         // Lets the widget pick the newest of the app's and the background sync's snapshots
-        'generatedAt': now.millisecondsSinceEpoch,
+        'generatedAt': DateTime.now().millisecondsSinceEpoch,
         'groupTitle': group,
         'dayTitle': targetDayTitle,
         'isTomorrow': isTomorrow,

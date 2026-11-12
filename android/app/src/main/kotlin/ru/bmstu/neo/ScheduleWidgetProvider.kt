@@ -233,7 +233,7 @@ class ScheduleWidgetProvider : AppWidgetProvider() {
                 return
             }
 
-            val cal = Calendar.getInstance()
+            val cal = MoscowTime.calendar()
             val currentMinutes = cal.get(Calendar.HOUR_OF_DAY) * 60 + cal.get(Calendar.MINUTE)
 
             var currentLesson: JSONObject? = null
@@ -315,7 +315,7 @@ class ScheduleWidgetProvider : AppWidgetProvider() {
         }
 
         private fun getTargetMillis(minutes: Int): Long {
-            val cal = Calendar.getInstance()
+            val cal = MoscowTime.calendar()
             cal.set(Calendar.HOUR_OF_DAY, minutes / 60)
             cal.set(Calendar.MINUTE, minutes % 60)
             cal.set(Calendar.SECOND, 0)
@@ -329,7 +329,7 @@ class ScheduleWidgetProvider : AppWidgetProvider() {
                 val isTomorrow = json.optBoolean("isTomorrow", false)
                 if (isTomorrow) return
 
-                val cal = Calendar.getInstance()
+                val cal = MoscowTime.calendar()
                 val currentMinutes = cal.get(Calendar.HOUR_OF_DAY) * 60 + cal.get(Calendar.MINUTE)
 
                 var nextBoundaryMin: Int? = null
@@ -351,7 +351,7 @@ class ScheduleWidgetProvider : AppWidgetProvider() {
                 }
 
                 if (nextBoundaryMin != null) {
-                    val targetCal = Calendar.getInstance().apply {
+                    val targetCal = MoscowTime.calendar().apply {
                         set(Calendar.HOUR_OF_DAY, nextBoundaryMin / 60)
                         set(Calendar.MINUTE, nextBoundaryMin % 60)
                         set(Calendar.SECOND, 2)

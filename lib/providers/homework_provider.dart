@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/homework_note.dart';
+import '../constants/moscow_time.dart';
 
 /// The student's homework notes. Stored only in SharedPreferences on the device.
 class HomeworkProvider with ChangeNotifier {
@@ -22,7 +23,7 @@ class HomeworkProvider with ChangeNotifier {
   bool _readFailed = false;
   late final Future<void> _ready;
 
-  HomeworkProvider({DateTime Function()? clock, List<HomeworkNote>? seed}) : _clock = clock ?? DateTime.now {
+  HomeworkProvider({DateTime Function()? clock, List<HomeworkNote>? seed}) : _clock = clock ?? MoscowTime.now {
     _ready = _load(seed);
   }
 

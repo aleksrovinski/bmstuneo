@@ -8,6 +8,7 @@ import '../services/bmstu_api_service.dart';
 import '../services/bmstu_groups_catalog.dart';
 import '../services/widget_sync_service.dart';
 import '../services/cache_store.dart';
+import '../constants/moscow_time.dart';
 
 class ScheduleProvider with ChangeNotifier {
   static const _cachePrefix = 'cached_sched_v1_';
@@ -34,8 +35,8 @@ class ScheduleProvider with ChangeNotifier {
   SyncStatus? _syncStatus;
 
   ScheduleProvider({required this.apiService, this.isPrimary = true}) {
-    // Set default day based on today's weekday (1 = Mon ... 7 = Sun)
-    final now = DateTime.now();
+    // Set default day based on today's weekday in Moscow (1 = Mon ... 7 = Sun)
+    final now = MoscowTime.now();
     if (now.weekday >= 1 && now.weekday <= 6) {
       _selectedDay = now.weekday;
     } else {
@@ -47,6 +48,9 @@ class ScheduleProvider with ChangeNotifier {
 
   CurrentWeek? get currentWeek => _currentWeek;
   List<ScheduleLesson> get allLessons => [..._lessons, ..._customLessons];
+
+  @visibleForTesting
+  set lessonsForTest(List<ScheduleLesson> lessons) => _lessons = lessons;
   List<ScheduleLesson> get customLessons => _customLessons;
   String get currentGroupUuid => _currentGroupUuid;
   String get currentGroupTitle => _currentGroupTitle;
@@ -165,12 +169,9 @@ class ScheduleProvider with ChangeNotifier {
         final cachedAt = rawTime != null ? DateTime.tryParse(rawTime) : null;
 
         if (cachedAt != null) {
-          final now = DateTime.now();
-          final cachedMonday = DateTime(cachedAt.year, cachedAt.month, cachedAt.day)
-              .subtract(Duration(days: cachedAt.weekday - 1));
-          final nowMonday = DateTime(now.year, now.month, now.day)
-              .subtract(Duration(days: now.weekday - 1));
-          final weeksPassed = nowMonday.difference(cachedMonday).inDays ~/ 7;
+          final now = MoscowTime.now();
+          final cachedMsk = MoscowTime.of(cachedAt);
+          final weeksPassed = cachedMsk.mondayOfWeek.calendarDaysUntil(now.mondayOfWeek) ~/ 7;
 
           if (weeksPassed != 0) {
             final newWeekNumber = cachedWeek.weekNumber + weeksPassed;
@@ -325,13 +326,13 @@ class ScheduleProvider with ChangeNotifier {
 
   // Filter lessons for today
   List<ScheduleLesson> get lessonsForToday {
-    final now = DateTime.now();
+    final now = MoscowTime.now();
     if (now.weekday < 1 || now.weekday > 7) return [];
     return getLessonsForDay(now.weekday, 'current');
   }
 
   // Tomorrow's date and weekday calculations
-  DateTime get tomorrowDate => DateTime.now().add(const Duration(days: 1));
+  DateTime get tomorrowDate => MoscowTime.now().plusDays(1);
   int get tomorrowWeekday => tomorrowDate.weekday; // 1 = Mon ... 7 = Sun
 
   bool get isTomorrowNumerator {
@@ -382,10 +383,8 @@ class ScheduleProvider with ChangeNotifier {
 
   bool isDateNumerator(DateTime date) {
     final currentNum = _currentWeek?.isNumerator ?? true;
-    final now = DateTime.now();
-    final nowMonday = DateTime(now.year, now.month, now.day).subtract(Duration(days: now.weekday - 1));
-    final targetMonday = DateTime(date.year, date.month, date.day).subtract(Duration(days: date.weekday - 1));
-    final weekDiff = (targetMonday.difference(nowMonday).inDays / 7).round();
+    final now = MoscowTime.now();
+    final weekDiff = now.mondayOfWeek.calendarDaysUntil(date.mondayOfWeek) ~/ 7;
     return weekDiff % 2 == 0 ? currentNum : !currentNum;
   }
 
@@ -423,7 +422,7 @@ class ScheduleProvider with ChangeNotifier {
 
   // Live pair analysis with real-time countdown (days, hours, minutes, seconds)
   LivePairStatus getLivePairStatus() {
-    final now = DateTime.now();
+    final now = MoscowTime.now();
     final todayLessons = lessonsForToday;
 
     // 1. Check if a pair is currently active
@@ -494,7 +493,7 @@ class ScheduleProvider with ChangeNotifier {
 
     // 3. If today's pairs are over or today has no pairs, look forward for the next pair
     for (int offset = 1; offset <= 14; offset++) {
-      final checkDate = now.add(Duration(days: offset));
+      final checkDate = now.plusDays(offset);
       final checkWeekday = checkDate.weekday;
       if (checkWeekday >= 1 && checkWeekday <= 7) {
         final isCheckNumerator = isDateNumerator(checkDate);
@@ -519,7 +518,7 @@ class ScheduleProvider with ChangeNotifier {
               int.tryParse(startParts[1]) ?? 0,
               0,
             );
-            final diff = targetDt.difference(now);
+            final diff = MoscowTime.instantOf(targetDt).difference(MoscowTime.instantOf(now));
             final formatted = formatCountdownDuration(diff);
 
             final String dayLabel;

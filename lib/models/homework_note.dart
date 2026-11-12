@@ -1,4 +1,5 @@
 import 'schedule_lesson.dart';
+import '../constants/moscow_time.dart';
 
 /// Quick homework is due at the next pair of the discipline; long homework has its
 /// own deadline the student picks.
@@ -85,21 +86,19 @@ class HomeworkNote {
   final ofDiscipline = lessons.where((l) => l.disciplineTitle == disciplineTitle).toList();
   if (ofDiscipline.isEmpty) return null;
 
-  final today = DateTime(now.year, now.month, now.day);
-  final monday = today.subtract(Duration(days: today.weekday - 1));
+  final today = now.dateOnly;
+  final monday = today.mondayOfWeek;
   for (var offset = 0; offset < 15; offset++) {
-    final date = today.add(Duration(days: offset));
-    final weeksAhead = date.difference(monday).inDays ~/ 7;
+    final date = today.plusDays(offset);
+    final weeksAhead = monday.calendarDaysUntil(date) ~/ 7;
     final isNumerator = weeksAhead.isEven ? currentWeekIsNumerator : !currentWeekIsNumerator;
 
     final candidates = <({ScheduleLesson lesson, DateTime start})>[];
     for (final l in ofDiscipline) {
       if (l.day != date.weekday || !l.matchesWeek(isNumeratorWeek: isNumerator)) continue;
       final parts = l.startTime.split(':');
-      final start = date.add(Duration(
-        hours: int.tryParse(parts.first) ?? 0,
-        minutes: parts.length > 1 ? int.tryParse(parts[1]) ?? 0 : 0,
-      ));
+      final start = DateTime(date.year, date.month, date.day, int.tryParse(parts.first) ?? 0,
+          parts.length > 1 ? int.tryParse(parts[1]) ?? 0 : 0);
       if (start.isAfter(now)) candidates.add((lesson: l, start: start));
     }
     if (candidates.isNotEmpty) {

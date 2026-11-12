@@ -11,6 +11,7 @@ import 'login_screen.dart';
 import '../services/cache_store.dart';
 import '../widgets/teacher_schedule/teacher_lesson_card.dart';
 import '../widgets/teacher_schedule/teacher_search_results.dart';
+import '../constants/moscow_time.dart';
 
 class TeacherScheduleScreen extends StatefulWidget {
   final String? teacherUuid;
@@ -64,7 +65,7 @@ class _TeacherScheduleScreenState extends State<TeacherScheduleScreen> {
   @override
   void initState() {
     super.initState();
-    final todayWeekday = DateTime.now().weekday;
+    final todayWeekday = MoscowTime.now().weekday;
     _selectedDay = todayWeekday.clamp(1, 6);
     _dayPageController = PageController(initialPage: _selectedDay - 1);
 
@@ -657,7 +658,7 @@ class _TeacherScheduleScreenState extends State<TeacherScheduleScreen> {
             children: List.generate(6, (index) {
               final dayNum = index + 1;
               final isSelected = _selectedDay == dayNum;
-              final isToday = DateTime.now().weekday == dayNum;
+              final isToday = MoscowTime.now().weekday == dayNum;
 
               return Expanded(
                 child: GestureDetector(

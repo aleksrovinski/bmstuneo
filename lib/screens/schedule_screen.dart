@@ -9,6 +9,7 @@ import '../widgets/group_picker_sheet.dart';
 import '../widgets/add_custom_lesson_sheet.dart';
 import '../widgets/offline_status_banner.dart';
 import 'teacher_schedule_screen.dart';
+import '../constants/moscow_time.dart';
 
 class ScheduleScreen extends StatefulWidget {
   const ScheduleScreen({super.key});
@@ -156,13 +157,11 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
 
     final currentGroupTitle = sched.currentGroupTitle.isNotEmpty ? sched.currentGroupTitle : auth.currentGroupTitle;
 
-    final now = DateTime.now();
+    final now = MoscowTime.now();
     final week = sched.currentWeek;
     final isCurrentNumerator = week?.isNumerator ?? true;
     // Dates under the day names; on Sunday the strip already shows the coming week
-    final monday = DateTime(now.year, now.month, now.day)
-        .subtract(Duration(days: now.weekday - 1))
-        .add(Duration(days: now.weekday == DateTime.sunday ? 7 : 0));
+    final monday = now.mondayOfWeek.plusDays(now.weekday == DateTime.sunday ? 7 : 0);
 
     return Scaffold(
       appBar: AppBar(
@@ -277,7 +276,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
               children: List.generate(6, (index) {
                 final dayNum = index + 1;
                 final isSelected = sched.selectedDay == dayNum;
-                final date = monday.add(Duration(days: index));
+                final date = monday.plusDays(index);
                 final isToday = date.year == now.year && date.month == now.month && date.day == now.day;
                 final foreground = isSelected ? scheme.onPrimary : (isToday ? scheme.primary : scheme.onSurface);
 
@@ -364,7 +363,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
                                   final lesson = dayLessons[lessonIdx];
                                   return PairCard(
                                     lesson: lesson,
-                                    date: monday.add(Duration(days: index)),
+                                    date: monday.plusDays(index),
                                     onDelete: lesson.isCustom ? () => _confirmDeleteLesson(context, lesson) : null,
                                   );
                                 },

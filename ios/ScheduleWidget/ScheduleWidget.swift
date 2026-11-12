@@ -84,7 +84,7 @@ struct Provider: TimelineProvider {
             schedule: sample,
             activeLesson: sample.lessons?.first,
             nextLesson: sample.lessons?.last,
-            targetCountdownDate: Calendar.current.date(byAdding: .minute, value: 35, to: Date()),
+            targetCountdownDate: Calendar.moscow.date(byAdding: .minute, value: 35, to: Date()),
             isLessonActive: true,
             statusBadgeText: "Идёт пара"
         )
@@ -108,7 +108,7 @@ struct Provider: TimelineProvider {
            let lessons = schedule.lessons,
            !lessons.isEmpty,
            schedule.isTomorrow != true {
-            let cal = Calendar.current
+            let cal = Calendar.moscow
             var boundaryMinutes: Set<Int> = []
 
             for lesson in lessons {
@@ -132,7 +132,7 @@ struct Provider: TimelineProvider {
             }
         }
 
-        let refreshDate = Calendar.current.date(byAdding: .minute, value: 15, to: currentDate) ?? currentDate.addingTimeInterval(900)
+        let refreshDate = Calendar.moscow.date(byAdding: .minute, value: 15, to: currentDate) ?? currentDate.addingTimeInterval(900)
         let timeline = Timeline(entries: entries, policy: .after(refreshDate))
         completion(timeline)
     }
@@ -155,7 +155,7 @@ struct Provider: TimelineProvider {
             )
         }
 
-        let cal = Calendar.current
+        let cal = Calendar.moscow
         let curH = cal.component(.hour, from: date)
         let curM = cal.component(.minute, from: date)
         let currentMinutes = curH * 60 + curM
@@ -437,7 +437,7 @@ struct MediumWidgetView: View {
 
             // Full-width Lessons List
             if let lessons = sched.lessons, !lessons.isEmpty {
-                let cal = Calendar.current
+                let cal = Calendar.moscow
                 let curM = cal.component(.hour, from: entry.date) * 60 + cal.component(.minute, from: entry.date)
                 let visibleLessons = sched.isTomorrow == true
                     ? Array(lessons.prefix(2))
@@ -566,7 +566,7 @@ struct LargeWidgetView: View {
             Divider().background(Color.white.opacity(0.15))
 
             if let lessons = sched.lessons, !lessons.isEmpty {
-                let cal = Calendar.current
+                let cal = Calendar.moscow
                 let curM = cal.component(.hour, from: entry.date) * 60 + cal.component(.minute, from: entry.date)
                 let visibleLessons = sched.isTomorrow == true
                     ? Array(lessons.prefix(5))
@@ -830,4 +830,13 @@ struct ScheduleWidgetBundle: WidgetBundle {
             ScheduleLiveActivity()
         }
     }
+}
+
+extension Calendar {
+    /// BMSTU pairs follow Moscow time wherever the phone is (lib/constants/moscow_time.dart)
+    static let moscow: Calendar = {
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = TimeZone(identifier: "Europe/Moscow") ?? .current
+        return cal
+    }()
 }

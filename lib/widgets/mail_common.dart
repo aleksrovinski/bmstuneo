@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../models/mail_folder.dart';
+import '../constants/moscow_time.dart';
 
 const _shortMonths = ['янв.', 'февр.', 'мар.', 'апр.', 'мая', 'июн.', 'июл.', 'авг.', 'сент.', 'окт.', 'нояб.', 'дек.'];
 const _monthsGenitive = [
@@ -15,7 +16,7 @@ String mailListDate(DateTime? date, DateTime now) {
   final day = DateTime(date.year, date.month, date.day);
   final today = DateTime(now.year, now.month, now.day);
   if (day == today) return '${_two(date.hour)}:${_two(date.minute)}';
-  if (day == today.subtract(const Duration(days: 1))) return 'вчера';
+  if (day == today.plusDays(-1)) return 'вчера';
   if (date.year == now.year) return '${date.day} ${_shortMonths[date.month - 1]}';
   return '${_two(date.day)}.${_two(date.month)}.${date.year % 100}';
 }

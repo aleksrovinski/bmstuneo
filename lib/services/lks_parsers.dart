@@ -1,6 +1,7 @@
 import '../models/discipline_progress.dart';
 import '../models/schedule_lesson.dart';
 import '../models/session_result.dart';
+import '../constants/moscow_time.dart';
 
 /// Turns raw LKS responses (JSON and scraped HTML) into the app's models.
 /// No network and no state: everything here can be tested on a string.
@@ -314,7 +315,9 @@ abstract final class LksParsers {
     final rawDate = json['date']?.toString();
     if (rawDate != null && rawDate.isNotEmpty) {
       try {
-        final dt = DateTime.parse(rawDate).toLocal();
+        // Moscow time, as the LKS website shows it; a date without an offset already is
+        final parsed = DateTime.parse(rawDate);
+        final dt = parsed.isUtc ? MoscowTime.of(parsed) : parsed;
         const months = [
           'января', 'февраля', 'марта', 'апреля', 'мая', 'июня',
           'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря'

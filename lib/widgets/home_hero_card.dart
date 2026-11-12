@@ -5,6 +5,7 @@ import '../providers/auth_provider.dart';
 import '../providers/schedule_provider.dart';
 import 'qr_pass_dialog.dart';
 import 'live_activity_settings_sheet.dart';
+import '../constants/moscow_time.dart';
 
 class HomeHeroCard extends StatefulWidget {
   final VoidCallback onOpenSchedule;
@@ -100,7 +101,7 @@ class _HomeHeroCardState extends State<HomeHeroCard> with WidgetsBindingObserver
     if (lesson != null) {
       if (isInProgress) {
         when = 'до ${lesson.endTime}';
-      } else if (lesson.day != DateTime.now().weekday) {
+      } else if (lesson.day != MoscowTime.now().weekday) {
         when = '${_weekdaysShort[(lesson.day - 1).clamp(0, 6)]}, ${lesson.startTime}';
         headline = 'Следующая пара';
       } else {

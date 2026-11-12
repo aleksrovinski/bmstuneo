@@ -1,3 +1,5 @@
+import '../constants/moscow_time.dart';
+
 class CurrentWeek {
   final int weekNumber;
   final String weekName;
@@ -29,15 +31,14 @@ class CurrentWeek {
   /// spring starts on the second Monday of February, as in 2024–2026. LKS's
   /// own answer always wins when there is one.
   factory CurrentWeek.defaultWeek([DateTime? at]) {
-    final now = at ?? DateTime.now();
+    final now = at ?? MoscowTime.now();
     final today = DateTime(now.year, now.month, now.day);
     final isSpring = now.month >= 2 && now.month <= 7;
     final autumnYear = now.month == 1 ? now.year - 1 : now.year;
     final start = isSpring ? _secondMondayOfFebruary(now.year) : DateTime(autumnYear, 9, 1);
     final end = isSpring ? DateTime(now.year, 6, 30) : DateTime(autumnYear + 1, 1, 31);
 
-    final startMonday = start.subtract(Duration(days: start.weekday - 1));
-    final weekNumber = (today.difference(startMonday).inDays ~/ 7 + 1).clamp(1, 17);
+    final weekNumber = (start.mondayOfWeek.calendarDaysUntil(today) ~/ 7 + 1).clamp(1, 17);
     final isNum = weekNumber.isOdd;
 
     return CurrentWeek(
@@ -52,8 +53,7 @@ class CurrentWeek {
 
   static DateTime _secondMondayOfFebruary(int year) {
     final feb1 = DateTime(year, 2, 1);
-    final firstMonday = feb1.add(Duration(days: (DateTime.monday - feb1.weekday + 7) % 7));
-    return firstMonday.add(const Duration(days: 7));
+    return feb1.plusDays((DateTime.monday - feb1.weekday + 7) % 7 + 7);
   }
 
   static String _isoDate(DateTime d) =>

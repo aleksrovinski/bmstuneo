@@ -5,13 +5,14 @@ import '../models/physical_culture.dart';
 import '../models/schedule_lesson.dart';
 import '../models/session_result.dart';
 import '../models/user_profile.dart';
+import '../constants/moscow_time.dart';
 
 /// Sample data for the demo build: a made-up student whose week shows every
 /// feature. Dates are relative to [now], so the demo always has a pair in progress
 /// during the day, deadlines this week and scores for past modules.
 class DemoData {
   final DateTime now;
-  DemoData([DateTime? now]) : now = now ?? DateTime.now();
+  DemoData([DateTime? now]) : now = now ?? MoscowTime.now();
 
   static const groupUuid = 'demo-group-rk6-31b';
   static const stageUuid = 'demo-stage-3';
