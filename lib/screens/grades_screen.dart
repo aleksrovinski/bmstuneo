@@ -7,6 +7,8 @@ import '../widgets/grades/grades_category_tabs.dart';
 import '../widgets/grades/grades_status_legend.dart';
 import '../widgets/grades/grades_filter_bar.dart';
 import '../widgets/grades/discipline_card.dart';
+import '../widgets/grades/score_widgets.dart';
+import '../models/discipline_progress.dart';
 import '../widgets/offline_status_banner.dart';
 import 'session_screen.dart';
 
@@ -63,6 +65,11 @@ class _GradesScreenState extends State<GradesScreen> {
 
     final currentWeekNum = sched.currentWeek?.weekNumber ?? 1;
     final filteredDisciplines = prog.filteredDisciplines;
+    // Points belong to the modules, which are in the "current progress" list
+    final showScores = prog.activeCategory == ProgressCategory.controls;
+    final semesterScore = SemesterScore.of(prog.disciplines);
+    // The semester total is about all disciplines, so it steps aside while searching
+    final showSemesterScore = showScores && semesterScore.hasModules && prog.searchQuery.trim().isEmpty;
 
     return Scaffold(
       appBar: AppBar(
@@ -147,8 +154,12 @@ class _GradesScreenState extends State<GradesScreen> {
                         ? _buildEmptyState(context, isDark, prog)
                         : ListView.builder(
                             padding: const EdgeInsets.only(top: 6, bottom: 40),
-                            itemCount: filteredDisciplines.length,
+                            itemCount: filteredDisciplines.length + (showSemesterScore ? 1 : 0),
                             itemBuilder: (context, index) {
+                              if (showSemesterScore) {
+                                if (index == 0) return SemesterScoreCard(score: semesterScore);
+                                index--;
+                              }
                               final disc = filteredDisciplines[index];
                               final events = prog.getEventsForDiscipline(
                                 disc,
@@ -160,6 +171,7 @@ class _GradesScreenState extends State<GradesScreen> {
                                 events: events,
                                 currentWeek: currentWeekNum,
                                 isDark: isDark,
+                                showScore: showScores,
                               );
                             },
                           ),

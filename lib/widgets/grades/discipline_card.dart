@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../models/discipline_progress.dart';
 import 'event_detail_modal.dart';
+import 'score_widgets.dart';
 
 class DisciplineCard extends StatelessWidget {
   final DisciplineProgress disc;
@@ -8,12 +9,16 @@ class DisciplineCard extends StatelessWidget {
   final int currentWeek;
   final bool isDark;
 
+  /// Points and the module bar; off for the lists of labs and seminars.
+  final bool showScore;
+
   const DisciplineCard({
     super.key,
     required this.disc,
     required this.events,
     required this.currentWeek,
     required this.isDark,
+    this.showScore = true,
   });
 
   @override
@@ -26,7 +31,7 @@ class DisciplineCard extends StatelessWidget {
       weekEvents.putIfAbsent(e.week, () => []).add(e);
     }
 
-    final pointsSummary = disc.currentPointsSummary;
+    final modules = showScore ? disc.modules : const <ControlEvent>[];
     final submittedEventsCount = events.where((e) => e.isSubmitted).length;
     final issuedHomeworksCount = events
         .where((e) => (e.type == 'ДЗ' || e.type == 'ЛР') && e.isIssued)
@@ -179,32 +184,20 @@ class DisciplineCard extends StatelessWidget {
                     ],
                   ),
                 ),
-                if (pointsSummary != null) ...[
-                  Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    decoration: BoxDecoration(
-                      color:
-                          theme.colorScheme.primary.withValues(alpha: 0.12),
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(
-                        color:
-                          theme.colorScheme.primary.withValues(alpha: 0.25),
-                      ),
-                    ),
-                    child: Text(
-                      pointsSummary,
-                      style: TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w700,
-                        color: theme.colorScheme.primary,
-                      ),
-                    ),
-                  ),
+                if (modules.isNotEmpty) ...[
+                  const SizedBox(width: 10),
+                  DisciplineScore(disc: disc),
                 ],
               ],
             ),
           ),
+
+          // 1b. Points per module
+          if (modules.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+              child: ModuleScoreBar(modules: modules, onTap: (m) => EventDetailModal.show(context, m)),
+            ),
 
           const Divider(height: 1, thickness: 0.5),
 
@@ -370,7 +363,10 @@ class DisciplineCard extends StatelessWidget {
                 borderRadius: BorderRadius.circular(5),
               ),
               child: Text(
-                e.shortBadgeText,
+                // A graded module shows its points, not just "Защищено"
+                e.moduleScore != null
+                    ? '${e.moduleScore}${e.threshold('point_all') != null ? '/${e.threshold('point_all')}' : ' б.'}'
+                    : e.shortBadgeText,
                 style: TextStyle(
                   fontSize: 9.5,
                   fontWeight: FontWeight.w800,

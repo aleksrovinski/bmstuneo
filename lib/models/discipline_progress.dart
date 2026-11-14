@@ -126,6 +126,18 @@ class ControlEvent {
   /// that grade) or `point_all` (maximum).
   int? threshold(String key) => _asInt(points?[key]);
 
+  /// Grade (5, 4, 3 or 2) the module's score is on by its own thresholds; null while
+  /// it is not graded or LKS gives no thresholds for it.
+  int? get moduleGrade {
+    final score = moduleScore;
+    final p3 = threshold('point_3'), p4 = threshold('point_4'), p5 = threshold('point_5');
+    if (score == null || p3 == null || p4 == null || p5 == null) return null;
+    if (score >= p5) return 5;
+    if (score >= p4) return 4;
+    if (score >= p3) return 3;
+    return 2;
+  }
+
   /// A graded module that scored below its pass threshold (`point_3`).
   bool get isBelowThreshold {
     final score = moduleScore;
@@ -450,6 +462,27 @@ class DisciplineProgress {
 
   List<ControlEvent> get _modules => controls.where((c) => c.type == 'М').toList();
 
+  /// The discipline's modules in semester order.
+  List<ControlEvent> get modules => _modules..sort((a, b) => a.week.compareTo(b.week));
+
+  /// The most points the discipline gives in the semester: LKS's own figure, else
+  /// the sum of the module maximums when every module has one.
+  int? get maxPoints {
+    final own = ControlEvent._asInt(points['point_all']);
+    if (own != null && own > 0) return own;
+    final maxes = _modules.map((m) => m.threshold('point_all')).toList();
+    if (maxes.isEmpty || maxes.any((m) => m == null)) return null;
+    return maxes.fold<int>(0, (a, b) => a + b!);
+  }
+
+  /// The most points the modules graded so far could have given.
+  int get gradedMaxPoints => _modules
+      .where((m) => m.moduleScore != null)
+      .map((m) => m.threshold('point_all') ?? 0)
+      .fold(0, (a, b) => a + b);
+
+  int get gradedModulesCount => _modules.where((m) => m.moduleScore != null).length;
+
   /// Points scored on the modules graded so far.
   int get scoredModulePoints =>
       _modules.map((m) => m.moduleScore).whereType<int>().fold(0, (a, b) => a + b);
@@ -527,4 +560,50 @@ class DisciplineProgress {
             .map((s) => ControlEvent.fromJson(s as Map<String, dynamic>))
             .toList(),
       );
+}
+
+/// Points over all disciplines of the semester.
+class SemesterScore {
+  /// Points scored on all graded modules.
+  final int scored;
+  /// The most those graded modules could have given.
+  final int gradedMax;
+  /// The most the whole semester gives; null when LKS doesn't say for some discipline.
+  final int? semesterMax;
+  final int gradedModules;
+  final int totalModules;
+  /// Disciplines with at least one graded module, by the grade they are on (5, 4, 3, 2).
+  final Map<int, int> disciplinesByGrade;
+
+  const SemesterScore({
+    required this.scored,
+    required this.gradedMax,
+    required this.semesterMax,
+    required this.gradedModules,
+    required this.totalModules,
+    required this.disciplinesByGrade,
+  });
+
+  factory SemesterScore.of(List<DisciplineProgress> disciplines) {
+    final withModules = disciplines.where((d) => d.modules.isNotEmpty).toList();
+    final maxes = withModules.map((d) => d.maxPoints).toList();
+    final byGrade = <int, int>{};
+    for (final d in withModules) {
+      final grade = d.estimatedGrade;
+      if (grade != null) byGrade[grade] = (byGrade[grade] ?? 0) + 1;
+    }
+    return SemesterScore(
+      scored: withModules.fold(0, (a, d) => a + d.scoredModulePoints),
+      gradedMax: withModules.fold(0, (a, d) => a + d.gradedMaxPoints),
+      semesterMax: maxes.isEmpty || maxes.any((m) => m == null) ? null : maxes.fold<int>(0, (a, b) => a + b!),
+      gradedModules: withModules.fold(0, (a, d) => a + d.gradedModulesCount),
+      totalModules: withModules.fold(0, (a, d) => a + d.modules.length),
+      disciplinesByGrade: byGrade,
+    );
+  }
+
+  bool get hasModules => totalModules > 0;
+
+  /// Share of the points available so far that were scored, 0..100; null before the first grade.
+  int? get percentOfGraded => gradedMax > 0 ? (scored * 100 / gradedMax).round() : null;
 }
