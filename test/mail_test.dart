@@ -35,6 +35,33 @@ class FakeAdapter implements HttpClientAdapter {
   void close({bool force = false}) {}
 }
 
+/// Answers session requests after a pause and counts how many of them overlap.
+class _SlowAdapter implements HttpClientAdapter {
+  final _FakeCgp server;
+  int inFlight = 0;
+  int maxInFlight = 0;
+  _SlowAdapter(this.server);
+
+  @override
+  Future<ResponseBody> fetch(
+    RequestOptions options,
+    Stream<Uint8List>? requestStream,
+    Future<void>? cancelFuture,
+  ) async {
+    final session = options.uri.path.startsWith('/Session/');
+    if (session && ++inFlight > maxInFlight) maxInFlight = inFlight;
+    try {
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+      return server.handle(options);
+    } finally {
+      if (session) inFlight--;
+    }
+  }
+
+  @override
+  void close({bool force = false}) {}
+}
+
 ResponseBody _xml(String body, [int status = 200]) => ResponseBody.fromString(
       body,
       status,
@@ -61,11 +88,14 @@ const _letter = '''
 </EMail>''';
 
 /// A tiny CommuniGate Pro stand-in: XIMSSLogin plus the sync requests the app sends.
+/// Like the real server it answers 550 for an unknown session and rejects a reqSeq
+/// that doesn't follow the previous one.
 class _FakeCgp {
   final requests = <RequestOptions>[];
   int logins = 0;
   String session = '';
   bool dropSession = false;
+  int? _lastReqSeq;
 
   List<XmlElement> syncRequests() => [
         for (final o in requests.where((o) => o.uri.path.endsWith('/sync')))
@@ -82,12 +112,19 @@ class _FakeCgp {
       }
       logins++;
       session = '1-sess$logins';
+      _lastReqSeq = null;
       return _xml('<XIMSS><session urlID="$session" userName="naa25r209@student.bmstu.ru" '
           'realName="Несененко Александр Алексеевич" version="6.5.6"/></XIMSS>');
     }
     if (dropSession || !path.startsWith('/Session/$session/')) {
       dropSession = false;
       return ResponseBody.fromString('', 550);
+    }
+    final reqSeq = int.tryParse(o.uri.queryParameters['reqSeq'] ?? '');
+    if (reqSeq != null) {
+      final last = _lastReqSeq;
+      if (last != null && reqSeq != last && reqSeq != last + 1) return ResponseBody.fromString('', 400);
+      _lastReqSeq = reqSeq;
     }
 
     final out = StringBuffer('<XIMSS>');
@@ -184,6 +221,46 @@ void main() {
       expect(page.items, hasLength(2));
       expect(server.logins, 2);
       expect(server.syncRequests().where((e) => e.localName == 'folderOpen'), hasLength(2));
+    });
+
+    test('session requests go one at a time, without reqSeq, and open a folder once', () async {
+      final server = _FakeCgp();
+      final adapter = _SlowAdapter(server);
+      final mail = MailService()..httpClientAdapter = adapter;
+      await mail.login('naa25r209', 'secret');
+
+      // Opening a letter from a notification: the list and the letter load together
+      final results = await Future.wait<Object>([
+        mail.fetchFolders(),
+        mail.fetchPage('INBOX', reopen: true),
+        mail.readMessage('INBOX', 235),
+        mail.fetchPage('INBOX', from: 30),
+      ]);
+
+      expect(adapter.maxInFlight, 1);
+      expect(server.syncRequests().where((e) => e.localName == 'folderOpen'), hasLength(1));
+      expect((results[1] as MailPage).total, 2, reason: 'the first page opened the folder and got its counters');
+      expect((results[2] as MailMessage).subject, 'Лабораторная работа №4');
+      final syncUrls = server.requests.where((o) => o.uri.path.endsWith('/sync'));
+      expect(syncUrls.where((o) => o.uri.queryParameters.containsKey('reqSeq')), isEmpty,
+          reason: 'one request lost to a timeout would leave a gap the server rejects from then on');
+    });
+
+    test('requests queued behind an expired session sign in again only once', () async {
+      final server = _FakeCgp();
+      final mail = MailService()..httpClientAdapter = _SlowAdapter(server);
+      await mail.login('naa25r209', 'secret');
+      await mail.fetchPage('INBOX');
+
+      server.session = 'expired-by-server';
+      await Future.wait<Object>([
+        mail.fetchFolders(),
+        mail.fetchPage('INBOX', from: 30),
+        mail.readMessage('INBOX', 235),
+      ]);
+
+      expect(server.logins, 2);
+      expect(server.syncRequests().where((e) => e.localName == 'folderOpen'), hasLength(2), reason: 'once per session');
     });
 
     test('a wrong password is reported as MailAuthException', () async {

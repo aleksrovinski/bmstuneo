@@ -25,8 +25,12 @@ class MailServerException implements Exception {
   String toString() => message;
 }
 
-// The XIMSS session is gone (idle timeout, server restart): sign in again and retry
-class _SessionLost implements Exception {}
+// The XIMSS session is gone (idle timeout, server restart): sign in again and retry.
+// [sessionId] is the session the request used, null when there was none.
+class _SessionLost implements Exception {
+  final String? sessionId;
+  _SessionLost(this.sessionId);
+}
 
 /// The signed-in mailbox owner as the server reports them.
 class MailIdentity {
@@ -69,8 +73,10 @@ class MailService {
   // Folders belong to a session: after it is renewed they are opened again
   final Set<String> _openFolders = {};
   Future<void>? _loginInFlight;
+  // Session requests go one at a time, in order: two at once could both open the same
+  // folder, and the session's folder state is only known after each answer
+  Future<void> _lane = Future.value();
   int _requestSeq = 0;
-  int _postSeq = 0;
 
   MailService({CookieJar? cookieJar})
       : _cookieJar = cookieJar ?? CookieJar(),
@@ -146,9 +152,10 @@ class MailService {
   /// Messages [from]..[from]+[count]-1 of [mailbox], newest first. [reopen] re-sorts
   /// the folder on the server so new mail shows up, and returns the folder counters.
   Future<MailPage> fetchPage(String mailbox, {int from = 0, int count = pageSize, bool reopen = false}) =>
-      _withSession(() async {
+      _withSession(() => _serial(() async {
+        // Decided in turn: a request ahead of this one may have opened the folder
         final reopening = reopen && _openFolders.contains(mailbox);
-        final res = await _inFolder(mailbox, [
+        final res = await _inFolderNow(mailbox, [
           if (reopening)
             _el('folderReopen', {'folder': mailbox, 'sortField': 'INTERNALDATE', 'sortOrder': 'desc'}),
           _el('folderBrowse', {'folder': mailbox}, [
@@ -171,7 +178,7 @@ class MailService {
               .whereType<MailSummary>()
               .toList(),
         );
-      });
+      }));
 
   /// Reads the whole message; by default it is marked as read on the server.
   Future<MailMessage> readMessage(String mailbox, int uid, {bool markSeen = true}) => _withSession(() async {
@@ -262,15 +269,16 @@ class MailService {
   Future<File> downloadAttachment(MailMessage message, MailAttachment attachment) => _withSession(() async {
         // Parts are served from folders opened in the current session
         await _inFolder(message.mailbox, const []);
-        final url = attachmentPath(_sessionId!, message, attachment);
+        final sid = _sessionId;
+        if (sid == null) throw _SessionLost(null);
         final Response<List<int>> resp;
         try {
           resp = await _dio.get<List<int>>(
-            url,
+            attachmentPath(sid, message, attachment),
             options: Options(responseType: ResponseType.bytes, receiveTimeout: const Duration(minutes: 3)),
           );
         } on DioException catch (e) {
-          if (e.response?.statusCode == 550) throw _SessionLost();
+          if (e.response?.statusCode == 550) throw _SessionLost(sid);
           throw BmstuNetworkException.fromDio(e);
         }
         final dir = Directory('${(await getTemporaryDirectory()).path}/mail/${message.uid}-${attachment.partId}');
@@ -313,7 +321,6 @@ class MailService {
     }
     final session = parseLoginResponse(resp.data ?? '');
     _openFolders.clear();
-    _postSeq = 0;
     _identity = session.identity;
     _sessionId = session.sessionId;
   }
@@ -323,8 +330,9 @@ class MailService {
     if (_sessionId == null) await _renewSession();
     try {
       return await action();
-    } on _SessionLost {
-      await _renewSession();
+    } on _SessionLost catch (e) {
+      // Requests queued behind the failed one find it already renewed: no second login
+      if (_sessionId == null || e.sessionId == _sessionId) await _renewSession();
       try {
         return await action();
       } on _SessionLost {
@@ -353,10 +361,14 @@ class MailService {
 
   // Sends [requests] to [mailbox], opening it first if this session hasn't yet.
   // [opened] is the folderOpen reply (with the folder counters) when it was sent.
-  Future<({_Reply? opened, List<_Reply> replies})> _inFolder(String mailbox, List<XmlElement> requests) async {
+  // Decided in turn with other requests, so a folder is never opened twice.
+  Future<({_Reply? opened, List<_Reply> replies})> _inFolder(String mailbox, List<XmlElement> requests) =>
+      _serial(() => _inFolderNow(mailbox, requests));
+
+  Future<({_Reply? opened, List<_Reply> replies})> _inFolderNow(String mailbox, List<XmlElement> requests) async {
     final needsOpen = !_openFolders.contains(mailbox);
     if (!needsOpen && requests.isEmpty) return (opened: null, replies: const <_Reply>[]);
-    final replies = await _sync([
+    final replies = await _post([
       if (needsOpen)
         _el('folderOpen', {
           // The folder is named after its mailbox, so MIME part URLs match either way
@@ -381,10 +393,21 @@ class MailService {
     return (opened: opened, replies: replies.sublist(1));
   }
 
-  // One HTTP round trip with any number of XIMSS requests
-  Future<List<_Reply>> _sync(List<XmlElement> requests) async {
+  // Runs [task] after every session request queued before it has finished
+  Future<T> _serial<T>(Future<T> Function() task) {
+    final run = _lane.then((_) => task());
+    _lane = run.then<void>((_) {}, onError: (Object _) {});
+    return run;
+  }
+
+  Future<List<_Reply>> _sync(List<XmlElement> requests) => _serial(() => _post(requests));
+
+  // One HTTP round trip with any number of XIMSS requests. No reqSeq: it only helps
+  // clients that resend requests, and the server rejects every request after a gap
+  // in the sequence (one lost to a timeout), which would break the session for good.
+  Future<List<_Reply>> _post(List<XmlElement> requests) async {
     final sid = _sessionId;
-    if (sid == null) throw _SessionLost();
+    if (sid == null) throw _SessionLost(null);
     final ids = <String>[];
     for (final request in requests) {
       final id = 'm${++_requestSeq}';
@@ -395,18 +418,18 @@ class MailService {
     try {
       resp = await _dio.post<String>(
         '/Session/$sid/sync',
-        queryParameters: {'reqSeq': '${++_postSeq}'},
         data: XmlElement.tag('XIMSS', children: requests).toXmlString(),
         options: Options(contentType: 'text/xml; charset=utf-8', responseType: ResponseType.plain),
       );
     } on DioException catch (e) {
       final code = e.response?.statusCode;
-      if (code == 550 || code == 404) throw _SessionLost();
+      // 550 "unknown session"; any other 4xx also means this session can't go on
+      if (code != null && (code == 550 || (code >= 400 && code < 500))) throw _SessionLost(sid);
       throw BmstuNetworkException.fromDio(e);
     }
     final root = _parseXimss(resp.data ?? '');
     // Anything but XIMSS (a login page, an empty body) means the session is not there
-    if (root == null) throw _SessionLost();
+    if (root == null) throw _SessionLost(sid);
 
     final replies = {for (final id in ids) id: _Reply()};
     for (final el in root.childElements) {
@@ -416,7 +439,7 @@ class MailService {
       if (el.localName == 'response') {
         reply.answered = true;
         final errorText = el.getAttribute('errorText');
-        if (errorText != null && errorText.toLowerCase().contains('disconnected')) throw _SessionLost();
+        if (errorText != null && errorText.toLowerCase().contains('disconnected')) throw _SessionLost(sid);
         reply.error = errorText ?? (el.getAttribute('errorNum') != null ? 'ошибка ${el.getAttribute('errorNum')}' : null);
       } else {
         reply.data.add(el);
