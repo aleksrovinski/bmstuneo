@@ -14,6 +14,7 @@ import '../services/app_update.dart';
 import '../widgets/app_update_dialog.dart';
 import '../widgets/bmstu_neo_logo.dart';
 import '../widgets/group_picker_sheet.dart';
+import 'login_screen.dart';
 import '../widgets/live_activity_settings_sheet.dart';
 import '../widgets/notification_settings_card.dart';
 
@@ -134,6 +135,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
           ]),
 
+          if (auth.isFullAuth) ...[
+            const _SectionTitle('Вход в ЛКС'),
+            _Group(children: [
+              SwitchListTile(
+                secondary: const Icon(Icons.password_rounded),
+                title: const Text('Сохранять пароль'),
+                subtitle: Text(auth.isPasswordSaved ? LoginScreen.passwordSavedHint : LoginScreen.passwordNotSavedHint),
+                value: auth.isPasswordSaved,
+                onChanged: _setPasswordSaved,
+              ),
+            ]),
+          ],
+
           const _SectionTitle('Оформление'),
           _Group(children: [_buildThemeTile(context, themeProv)]),
 
@@ -209,6 +223,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ],
       ),
     );
+  }
+
+  Future<void> _setPasswordSaved(bool save) async {
+    final auth = context.read<AuthProvider>();
+    if (!save) {
+      await auth.forgetPassword();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Пароль удалён с устройства')),
+      );
+      return;
+    }
+    // The password isn't kept anywhere to save it from: ask for it once more.
+    // The login form has "Сохранить пароль" ticked by default.
+    await LoginScreen.showReauth(context);
   }
 
   String _syncLine(bool? isLive, DateTime? updated, DateFormat format, String count) {

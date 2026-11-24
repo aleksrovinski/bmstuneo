@@ -28,6 +28,7 @@ class AuthProvider with ChangeNotifier {
   String? _errorMessage;
   Future<bool>? _reloginInFlight;
   bool _needsLogin = false;
+  bool _passwordSaved = false;
   int _sessionGeneration = 0;
 
   // Overwritten by the saved or picked group; the default must exist in the current catalog
@@ -51,6 +52,11 @@ class AuthProvider with ChangeNotifier {
   /// The cached profile is shown, but LKS can't be reached with it: there is no
   /// saved password (or LKS rejected it). The UI asks the student to sign in again.
   bool get needsLogin => _needsLogin;
+
+  /// The LKS password is kept in the Keychain / Keystore, so the app can sign in again
+  /// by itself when the session expires. The student decides this at login and can
+  /// change it in settings.
+  bool get isPasswordSaved => _passwordSaved;
 
   /// Grows with every successful (re)login, so screens know to reload the data
   /// they failed to fetch while the session was expired.
@@ -157,6 +163,7 @@ class AuthProvider with ChangeNotifier {
 
       // 3. Cached profile: open the app right away and resume the session in the background
       if (_userProfile != null) {
+        await _loadPasswordSaved();
         unawaited(_resumeSession());
         return true;
       }
@@ -221,6 +228,7 @@ class AuthProvider with ChangeNotifier {
       if (user == null || user.isEmpty || pass == null || pass.isEmpty) {
         // Nothing to sign in with (not remembered, or the Keychain was reset)
         debugPrint('[AuthProvider] Silent relogin impossible: no saved credentials');
+        _passwordSaved = false;
         _setNeedsLogin(true);
         return false;
       }
@@ -281,10 +289,16 @@ class AuthProvider with ChangeNotifier {
         if (rememberMe) {
           try {
             await authStorage.saveCredentials(username.trim(), password);
+            _passwordSaved = true;
           } on AuthStorageException catch (e) {
             // Session stays valid; credentials just won't survive an app restart
             debugPrint('[AuthProvider] Credentials not remembered: $e');
+            _passwordSaved = false;
           }
+        } else {
+          // "Don't save" also means forgetting a password saved at an earlier login
+          await authStorage.clearCredentials();
+          _passwordSaved = false;
         }
 
         // Save cached profile and clear guest flag
@@ -340,6 +354,19 @@ class AuthProvider with ChangeNotifier {
     notifyListeners();
   }
 
+  /// Deletes the saved LKS password; the current session keeps working until it expires,
+  /// then the app asks for the password instead of signing in by itself.
+  Future<void> forgetPassword() async {
+    await authStorage.clearCredentials();
+    _passwordSaved = false;
+    notifyListeners();
+  }
+
+  Future<void> _loadPasswordSaved() async {
+    final creds = await authStorage.getCredentials();
+    _passwordSaved = (creds['username'] ?? '').isNotEmpty && (creds['password'] ?? '').isNotEmpty;
+  }
+
   // Logout
   Future<void> logout() async {
     _userProfile = null;
@@ -347,6 +374,7 @@ class AuthProvider with ChangeNotifier {
     _isGuest = false;
     _errorMessage = null;
     _needsLogin = false;
+    _passwordSaved = false;
     await authStorage.clearCredentials();
     await apiService.clearSession();
     // No account, nothing to sync: stop background checks and server pushes

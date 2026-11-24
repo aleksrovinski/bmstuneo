@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../providers/mail_provider.dart';
 import '../services/mail_service.dart';
@@ -48,7 +49,9 @@ class _MailLoginFormState extends State<MailLoginForm> {
       return;
     }
     FocusScope.of(context).unfocus();
-    await context.read<MailProvider>().login(username, password);
+    final ok = await context.read<MailProvider>().login(username, password);
+    // The password manager offers to save only a login the mail server accepted
+    TextInput.finishAutofillContext(shouldSave: ok);
   }
 
   InputDecoration _decoration(ThemeData theme, {required String hint, required IconData icon, Widget? suffix}) {
@@ -80,7 +83,11 @@ class _MailLoginFormState extends State<MailLoginForm> {
     final busy = mail.status == MailStatus.signingIn;
     final lksLogin = mail.lksLogin;
 
-    return Center(
+    // Lets the system password manager fill the mail login; a failed login or leaving
+    // the form never offers to save what was typed
+    return AutofillGroup(
+      onDisposeAction: AutofillContextAction.cancel,
+      child: Center(
       child: SingleChildScrollView(
         padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
         child: ConstrainedBox(
@@ -215,6 +222,7 @@ class _MailLoginFormState extends State<MailLoginForm> {
             ],
           ),
         ),
+      ),
       ),
     );
   }

@@ -160,4 +160,48 @@ void main() {
     await auth.logout();
     expect(await jar.loadForRequest(uri), isEmpty);
   });
+
+  group('Saving the password is the student\'s choice', () {
+    Future<Map<String, String?>> saved() => AuthStorage().getCredentials();
+
+    test('A cached-profile start knows whether a password is saved', () async {
+      _cachedProfile();
+      final api = ScriptedApi(onRestore: () async => _profile('РК5-32Б'), onLogin: () async => null);
+      expect((await _start(api)).isPasswordSaved, isTrue);
+
+      _cachedProfile(withCredentials: false);
+      expect((await _start(api)).isPasswordSaved, isFalse);
+    });
+
+    test('Login with "save" keeps it; without "save" also forgets an earlier one', () async {
+      _cachedProfile(withCredentials: false);
+      final api = ScriptedApi(onRestore: () async => null, onLogin: () async => _profile('РК5-32Б'));
+      final auth = AuthProvider(apiService: api, authStorage: AuthStorage());
+
+      expect(await auth.login('student', 'secret'), isTrue);
+      expect(auth.isPasswordSaved, isTrue);
+      expect((await saved())['password'], 'secret');
+
+      expect(await auth.login('student', 'secret', rememberMe: false), isTrue);
+      expect(auth.isPasswordSaved, isFalse);
+      expect((await saved())['password'], isNull, reason: 'the old password must not keep signing in');
+    });
+
+    test('Turning it off in settings deletes the password, the session stays', () async {
+      _cachedProfile();
+      final api = ScriptedApi(onRestore: () async => _profile('РК5-32Б'), onLogin: () async => _profile('РК5-32Б'));
+      final auth = await _start(api);
+      expect(auth.isPasswordSaved, isTrue);
+
+      await auth.forgetPassword();
+      expect(auth.isPasswordSaved, isFalse);
+      expect((await saved())['password'], isNull);
+      expect(auth.isFullAuth, isTrue, reason: 'still signed in until the session expires');
+
+      // When it does expire there is nothing to sign in with: the student is asked
+      expect(await auth.reloginSilently(), isFalse);
+      expect(auth.needsLogin, isTrue);
+      expect(api.loginCalls, 0);
+    });
+  });
 }

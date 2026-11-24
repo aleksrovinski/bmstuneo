@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
 import '../widgets/group_picker_sheet.dart';
@@ -11,6 +12,14 @@ class LoginScreen extends StatefulWidget {
   final bool isReauth;
 
   const LoginScreen({super.key, this.isReauth = false});
+
+  // Shared with the switch in settings, so both places explain the choice the same way
+  static const passwordSavedHint =
+      'Хранится только на этом устройстве, в защищённом хранилище. Когда сессия ЛКС истечёт, '
+      'приложение войдёт снова само';
+  static const passwordNotSavedHint =
+      'Когда сессия ЛКС истечёт, пароль придётся ввести снова; до этого не будет и фоновых '
+      'уведомлений об оценках';
 
   static Future<void> showReauth(BuildContext context) => Navigator.of(context).push(
         MaterialPageRoute(fullscreenDialog: true, builder: (_) => const LoginScreen(isReauth: true)),
@@ -50,6 +59,10 @@ class _LoginScreenState extends State<LoginScreen> {
 
     final auth = context.read<AuthProvider>();
     final success = await auth.login(username, password, rememberMe: _rememberMe);
+    // The password manager offers to save only a login that LKS accepted. This is the
+    // student's own manager and it asks first, so it is offered whatever "Сохранить
+    // пароль" says: that box is about this app keeping the password, not the manager.
+    TextInput.finishAutofillContext(shouldSave: success);
     if (success && widget.isReauth && mounted) {
       Navigator.of(context).pop();
       return;
@@ -86,7 +99,12 @@ class _LoginScreenState extends State<LoginScreen> {
       backgroundColor: theme.colorScheme.surface,
       appBar: widget.isReauth ? AppBar(title: const Text('Повторный вход в ЛКС')) : null,
       body: SafeArea(
-        child: Center(
+        // Lets the system password manager (Google, iCloud Keychain, Bitwarden...) fill
+        // the login and password, and offer to save them after a successful login.
+        // A failed login or leaving the screen never offers to save what was typed.
+        child: AutofillGroup(
+          onDisposeAction: AutofillContextAction.cancel,
+          child: Center(
           child: SingleChildScrollView(
             padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 24),
             child: ConstrainedBox(
@@ -156,6 +174,8 @@ class _LoginScreenState extends State<LoginScreen> {
                     controller: _usernameController,
                     autocorrect: false,
                     keyboardType: TextInputType.emailAddress,
+                    autofillHints: const [AutofillHints.username],
+                    textInputAction: TextInputAction.next,
                     style: TextStyle(
                       color: theme.colorScheme.onSurface,
                     ),
@@ -207,6 +227,12 @@ class _LoginScreenState extends State<LoginScreen> {
                     controller: _passwordController,
                     obscureText: _obscurePassword,
                     autocorrect: false,
+                    enableSuggestions: false,
+                    autofillHints: const [AutofillHints.password],
+                    textInputAction: TextInputAction.done,
+                    onSubmitted: (_) {
+                      if (!auth.isLoading) _handleLogin();
+                    },
                     style: TextStyle(
                       color: theme.colorScheme.onSurface,
                     ),
@@ -256,8 +282,9 @@ class _LoginScreenState extends State<LoginScreen> {
                   ),
                   const SizedBox(height: 12),
 
-                  // Remember me
+                  // Save password: the student's choice, also changeable later in settings
                   Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Checkbox(
                         value: _rememberMe,
@@ -274,11 +301,21 @@ class _LoginScreenState extends State<LoginScreen> {
                       Expanded(
                         child: GestureDetector(
                           onTap: () => setState(() => _rememberMe = !_rememberMe),
-                          child: Text(
-                            'Запомнить меня на этом устройстве',
-                            style: TextStyle(
-                              fontSize: 13,
-                              color: theme.colorScheme.onSurfaceVariant,
+                          child: Padding(
+                            padding: const EdgeInsets.only(top: 12),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Сохранить пароль',
+                                  style: TextStyle(fontSize: 14, color: theme.colorScheme.onSurface),
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  _rememberMe ? LoginScreen.passwordSavedHint : LoginScreen.passwordNotSavedHint,
+                                  style: TextStyle(fontSize: 12, color: theme.colorScheme.onSurfaceVariant),
+                                ),
+                              ],
                             ),
                           ),
                         ),
@@ -369,6 +406,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 ],
               ),
             ),
+          ),
           ),
         ),
       ),
