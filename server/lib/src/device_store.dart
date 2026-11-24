@@ -10,6 +10,13 @@ abstract class DeviceStore {
   Future<void> put(Device device);
   Future<void> delete(String installationId);
   Future<List<Device>> all();
+
+  /// Read-modify-write of one device with no await in between, so nothing
+  /// (a re-registration, an unsubscribe) can slip in between the read and the write.
+  ///
+  /// [change] gets the device as stored right now and returns the new version,
+  /// or null to delete it. Missing devices are left alone and [change] isn't called.
+  Future<void> update(String installationId, Device? Function(Device current) change);
 }
 
 class InMemoryDeviceStore implements DeviceStore {
@@ -20,6 +27,18 @@ class InMemoryDeviceStore implements DeviceStore {
 
   @override
   Future<void> put(Device device) async => _devices[device.installationId] = device;
+
+  @override
+  Future<void> update(String installationId, Device? Function(Device current) change) async {
+    final current = _devices[installationId];
+    if (current == null) return;
+    final next = change(current);
+    if (next == null) {
+      _devices.remove(installationId);
+    } else if (!identical(next, current)) {
+      _devices[installationId] = next;
+    }
+  }
 
   @override
   Future<void> delete(String installationId) async => _devices.remove(installationId);
@@ -74,6 +93,20 @@ class FileDeviceStore implements DeviceStore {
 
   @override
   Future<List<Device>> all() async => _devices.values.toList();
+
+  @override
+  Future<void> update(String installationId, Device? Function(Device current) change) {
+    final current = _devices[installationId];
+    if (current == null) return Future.value();
+    final next = change(current);
+    if (identical(next, current)) return Future.value();
+    if (next == null) {
+      _devices.remove(installationId);
+    } else {
+      _devices[installationId] = next;
+    }
+    return _persist();
+  }
 
   Future<void> _persist() {
     // A write that hasn't started yet will pick this change up too

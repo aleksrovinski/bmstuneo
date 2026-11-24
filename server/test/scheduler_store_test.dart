@@ -29,6 +29,28 @@ class FakeSender implements PushSender {
   }
 }
 
+// Changes the stored device while its push is "in flight", like the API would;
+// a change returning null unsubscribes the device
+class _MidFlightSender extends FakeSender {
+  final DeviceStore store;
+  final Map<String, Device? Function(Device)> changes;
+  _MidFlightSender(this.store, this.changes, {super.dead});
+
+  @override
+  Future<PushResult> sendSync(Device device) async {
+    final change = changes[device.installationId];
+    if (change != null) {
+      final next = change(device);
+      if (next == null) {
+        await store.delete(device.installationId);
+      } else {
+        await store.put(next);
+      }
+    }
+    return super.sendSync(device);
+  }
+}
+
 void main() {
   // 12:00 in Moscow
   final noon = DateTime.utc(2026, 10, 23, 9);
@@ -78,6 +100,51 @@ void main() {
       final apns = FakeSender();
       await SyncScheduler(store: store, senders: {'apns': apns}, now: () => noon, maxPerTick: 3).tick();
       expect(apns.sent, unorderedEquals(['d9', 'd8', 'd7']));
+    });
+
+    test('A re-registration during the push is not overwritten by the tick', () async {
+      final store = InMemoryDeviceStore();
+      await store.put(_device('moved'));
+      await store.put(_device('regrouped'));
+      final apns = _MidFlightSender(store, {
+        // The app got a new token while the push to the old one was in flight
+        'moved': (d) => d.copyWith(token: 'token-moved-2', clearApnsEnvironment: true),
+        // Same token, the student picked another group
+        'regrouped': (d) => d.copyWith(groupUuid: 'group-2'),
+      });
+
+      final stats = await SyncScheduler(store: store, senders: {'apns': apns}, now: () => noon).tick();
+
+      final moved = (await store.get('moved'))!;
+      expect(moved.token, 'token-moved-2');
+      expect(moved.lastPushAt, isNull, reason: 'the new token got no push yet: due next tick');
+      expect(moved.apnsEnvironment, isNull, reason: 'the old token\'s environment says nothing about the new one');
+
+      final regrouped = (await store.get('regrouped'))!;
+      expect(regrouped.groupUuid, 'group-2');
+      expect(regrouped.lastPushAt, noon);
+      expect(stats.delivered, 2);
+    });
+
+    test('A dead old token doesn\'t delete a device that re-registered meanwhile', () async {
+      final store = InMemoryDeviceStore();
+      await store.put(_device('moved'));
+      final apns = _MidFlightSender(store, {'moved': (d) => d.copyWith(token: 'token-moved-2')}, dead: {'moved'});
+
+      final stats = await SyncScheduler(store: store, senders: {'apns': apns}, now: () => noon).tick();
+
+      expect((await store.get('moved'))?.token, 'token-moved-2');
+      expect(stats.removed, 0);
+    });
+
+    test('An unsubscribe during the push is not undone by the tick', () async {
+      final store = InMemoryDeviceStore();
+      await store.put(_device('gone'));
+      final apns = _MidFlightSender(store, {'gone': (_) => null});
+
+      await SyncScheduler(store: store, senders: {'apns': apns}, now: () => noon).tick();
+
+      expect(await store.get('gone'), isNull);
     });
 
     test('Devices of a platform without credentials are skipped, not deleted', () async {

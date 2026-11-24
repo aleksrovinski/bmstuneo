@@ -75,15 +75,27 @@ class SyncScheduler {
 
   Future<void> _push(Device device, DateTime now, TickStats stats) async {
     final result = await senders[device.platform]!.sendSync(device);
-    switch (result.outcome) {
-      case PushOutcome.delivered:
-        stats.delivered++;
-        await store.put(device.copyWith(lastPushAt: now, apnsEnvironment: result.apnsEnvironment));
-      case PushOutcome.invalidToken:
-        stats.removed++;
-        await store.delete(device.installationId);
-      case PushOutcome.retryLater:
-        stats.deferred++;
+    if (result.outcome == PushOutcome.retryLater) {
+      stats.deferred++;
+      return;
+    }
+
+    // The push went to the token from the start of the tick. While it was in flight the app
+    // may have re-registered with a new token or unsubscribed: the answer says nothing about
+    // that new record, so it is left as stored (a new token is simply pushed next tick).
+    var applied = false;
+    await store.update(device.installationId, (current) {
+      if (current.token != device.token || current.platform != device.platform) return current;
+      applied = true;
+      return result.outcome == PushOutcome.invalidToken
+          ? null
+          : current.copyWith(lastPushAt: now, apnsEnvironment: result.apnsEnvironment);
+    });
+
+    if (result.outcome == PushOutcome.delivered) {
+      stats.delivered++;
+    } else if (applied) {
+      stats.removed++;
     }
   }
 
