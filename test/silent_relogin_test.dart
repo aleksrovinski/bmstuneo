@@ -145,6 +145,90 @@ void main() {
       await expectLater(api.dio.get(_scheduleUrl), throwsA(isA<DioException>()));
       expect(reloginCalls, 0);
     });
+
+    group('403', () {
+      const personUrl = '${BmstuApiService.apiBase}/person';
+      const forbiddenUrl = '${BmstuApiService.apiBase}/student/secret-section';
+
+      test('With a live session it is passed on, no password login', () async {
+        var reloginCalls = 0;
+        final api = BmstuApiService();
+        api.httpClientAdapter = FakeAdapter((options) {
+          if (options.uri.toString() == personUrl) {
+            return ResponseBody.fromString('{"data":{"firstName":"Иван"}}', 200,
+                headers: {'content-type': ['application/json']});
+          }
+          return ResponseBody.fromString('', 403);
+        });
+        api.onSilentRelogin = () async {
+          reloginCalls++;
+          return true;
+        };
+
+        for (var i = 0; i < 3; i++) {
+          await expectLater(
+            api.dio.get(forbiddenUrl),
+            throwsA(isA<DioException>().having((e) => e.response?.statusCode, 'statusCode', 403)),
+          );
+        }
+        expect(reloginCalls, 0);
+      });
+
+      test('With an expired session it still triggers a relogin and a retry', () async {
+        var sessionValid = false;
+        var reloginCalls = 0;
+        final api = BmstuApiService();
+        api.httpClientAdapter = FakeAdapter((options) {
+          if (!sessionValid) return ResponseBody.fromString('', 403);
+          return ResponseBody.fromString('{}', 200, headers: {'content-type': ['application/json']});
+        });
+        api.onSilentRelogin = () async {
+          reloginCalls++;
+          sessionValid = true;
+          return true;
+        };
+
+        final resp = await api.dio.get(_scheduleUrl);
+        expect(resp.statusCode, 200);
+        expect(reloginCalls, 1);
+      });
+
+      test('When the session check lands on the SSO page, it counts as expired', () async {
+        var reloginCalls = 0;
+        final api = BmstuApiService();
+        api.httpClientAdapter = FakeAdapter((options) {
+          if (options.uri.toString() == personUrl) {
+            return ResponseBody.fromString('<html>Вход</html>', 200, headers: {'content-type': ['text/html']});
+          }
+          return ResponseBody.fromString('', 403);
+        });
+        api.onSilentRelogin = () async {
+          reloginCalls++;
+          return false;
+        };
+
+        await expectLater(api.dio.get(_scheduleUrl), throwsA(isA<DioException>()));
+        expect(reloginCalls, 1);
+      });
+
+      test('When the session check is offline, no relogin', () async {
+        var reloginCalls = 0;
+        final api = BmstuApiService();
+        api.httpClientAdapter = FakeAdapter((options) {
+          if (options.uri.toString() == personUrl) {
+            throw DioException(requestOptions: options, type: DioExceptionType.connectionError);
+          }
+          return ResponseBody.fromString('', 403);
+        });
+        api.onSilentRelogin = () async {
+          reloginCalls++;
+          return true;
+        };
+
+        await expectLater(api.dio.get(_scheduleUrl), throwsA(isA<DioException>()));
+        expect(reloginCalls, 0);
+      });
+    });
   });
 
   test('AuthProvider.reloginSilently runs one SSO login for concurrent callers', () async {

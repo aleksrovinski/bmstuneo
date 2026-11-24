@@ -61,6 +61,12 @@ class BmstuApiService {
             return handler.next(err);
           }
 
+          // A 403 may just be "not allowed here" with a perfectly good session; logging in
+          // with the password again would not help and would hit SSO on every such request
+          if (_isAmbiguousForbidden(err) && !await _sessionLooksExpired()) {
+            return handler.next(err);
+          }
+
           if (!await _reloginOnce()) return handler.next(err);
 
           try {
@@ -92,6 +98,28 @@ class BmstuApiService {
         statusCode == 403 ||
         responseData.contains('login-actions') ||
         responseData.contains('auth.bmstu.ru');
+  }
+
+  /// A bare 403: LKS may send it for an expired session or for a section the student
+  /// has no access to. 401 and redirects to SSO always mean the session is gone.
+  static bool _isAmbiguousForbidden(DioException err) {
+    if (err.response?.statusCode != 403) return false;
+    final responseData = err.response?.data?.toString() ?? '';
+    return !responseData.contains('login-actions') && !responseData.contains('auth.bmstu.ru');
+  }
+
+  /// Asks LKS who is signed in, using the cookies only (no password).
+  /// True when the session is gone; false when it is alive or the check itself failed
+  /// for another reason (offline, server error), since a relogin wouldn't fix that either.
+  Future<bool> _sessionLooksExpired() async {
+    try {
+      final resp = await _authDio.get<Object?>('$apiBase/person');
+      // An expired session can also be followed to the SSO login page, which answers 200
+      // with HTML: only the JSON profile proves the student is still signed in
+      return resp.data is! Map;
+    } on DioException catch (e) {
+      return e.response != null && _isSessionExpired(e);
+    }
   }
 
   // Requests that fail together share one relogin instead of each starting its own
