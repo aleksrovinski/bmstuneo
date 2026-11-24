@@ -120,6 +120,11 @@ class PairCard extends StatelessWidget {
                           text: lesson.actTypeTitle,
                           style: TextStyle(color: typeColor, fontWeight: FontWeight.w700),
                         ),
+                        if (lesson.subgroupLabel != null)
+                          TextSpan(
+                            text: ' · ${lesson.subgroupLabel}',
+                            style: TextStyle(color: scheme.primary, fontWeight: FontWeight.w700),
+                          ),
                         TextSpan(text: ' · $meta'),
                       ],
                     ),

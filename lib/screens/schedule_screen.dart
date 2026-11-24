@@ -136,7 +136,12 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
   Future<void> _makeBrowsedPrimary() async {
     final browse = _browse;
     if (browse == null) return;
-    await context.read<AuthProvider>().setPrimaryGroup(GroupItem(title: browse.currentGroupTitle, uuid: browse.currentGroupUuid));
+    final auth = context.read<AuthProvider>();
+    if (browse.hasSubgroups) {
+      await ScheduleProvider.saveSubgroupForGroup(browse.currentGroupUuid, browse.effectiveSubgroup);
+    }
+    await auth.setPrimaryGroup(GroupItem(title: browse.currentGroupTitle, uuid: browse.currentGroupUuid));
+    if (!mounted) return;
     _stopBrowsing();
   }
 
@@ -269,6 +274,13 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
             ),
           ),
 
+          if (sched.hasSubgroups)
+            _SubgroupBar(
+              subgroupCount: sched.subgroupCount,
+              selectedSubgroup: sched.effectiveSubgroup,
+              onChanged: sched.setSelectedSubgroup,
+            ),
+
           // Day strip: weekday and date, today marked by color
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -349,7 +361,9 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
                                   ),
                                   const SizedBox(height: 4),
                                   Text(
-                                    'Проверьте фильтр недели или добавьте своё занятие кнопкой +',
+                                    sched.effectiveSubgroup != null
+                                        ? 'Проверьте фильтр недели или подгруппы, либо добавьте своё занятие кнопкой +'
+                                        : 'Проверьте фильтр недели или добавьте своё занятие кнопкой +',
                                     textAlign: TextAlign.center,
                                     style: TextStyle(fontSize: 13, color: scheme.onSurfaceVariant),
                                   ),
@@ -373,6 +387,55 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
                   ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _SubgroupBar extends StatelessWidget {
+  final int subgroupCount;
+  final int? selectedSubgroup;
+  final ValueChanged<int?> onChanged;
+
+  const _SubgroupBar({required this.subgroupCount, required this.selectedSubgroup, required this.onChanged});
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+
+    Widget chip(String label, int? value) {
+      final isSelected = selectedSubgroup == value;
+      return ChoiceChip(
+        label: Text(label),
+        selected: isSelected,
+        showCheckmark: false,
+        visualDensity: VisualDensity.compact,
+        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        selectedColor: scheme.primaryContainer,
+        backgroundColor: scheme.surfaceContainerLow,
+        side: BorderSide(
+          color: isSelected ? scheme.primary.withValues(alpha: 0.4) : scheme.outlineVariant.withValues(alpha: 0.6),
+        ),
+        labelStyle: TextStyle(
+          fontSize: 12.5,
+          fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+          color: isSelected ? scheme.onPrimaryContainer : scheme.onSurfaceVariant,
+        ),
+        onSelected: (_) => onChanged(value),
+      );
+    }
+
+    return SizedBox(
+      width: double.infinity,
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+        child: Row(
+          children: [
+            chip('Все', null),
+            for (var i = 1; i <= subgroupCount; i++) ...[const SizedBox(width: 8), chip('Подгруппа $i', i)],
+          ],
+        ),
       ),
     );
   }

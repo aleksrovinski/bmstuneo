@@ -173,6 +173,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> with Widget
     _reloadAfterNewSession(auth.sessionGeneration);
     _reloadOnPrimaryGroupChange(auth);
     final showReauth = auth.needsLogin && auth.isFullAuth;
+    final showFvBadge = auth.isFullAuth && context.watch<FvProvider>().healthPassport.needsAttention;
 
     final pages = [
       HomeScreen(
@@ -186,24 +187,24 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> with Widget
       const ProfileScreen(),
     ];
 
-    const destinations = [
-      NavigationDestination(icon: Icon(Icons.home_outlined), selectedIcon: Icon(Icons.home_rounded), label: 'Главная'),
-      NavigationDestination(
+    final destinations = [
+      const NavigationDestination(icon: Icon(Icons.home_outlined), selectedIcon: Icon(Icons.home_rounded), label: 'Главная'),
+      const NavigationDestination(
         icon: Icon(Icons.school_outlined),
         selectedIcon: Icon(Icons.school_rounded),
         label: 'Прогресс',
       ),
-      NavigationDestination(
+      const NavigationDestination(
         icon: Icon(Icons.calendar_month_outlined),
         selectedIcon: Icon(Icons.calendar_month_rounded),
         label: 'Расписание',
       ),
       NavigationDestination(
-        icon: Icon(Icons.fitness_center_outlined),
-        selectedIcon: Icon(Icons.fitness_center_rounded),
+        icon: Badge(isLabelVisible: showFvBadge, child: const Icon(Icons.fitness_center_outlined)),
+        selectedIcon: Badge(isLabelVisible: showFvBadge, child: const Icon(Icons.fitness_center_rounded)),
         label: 'ФКиС',
       ),
-      NavigationDestination(
+      const NavigationDestination(
         icon: Icon(Icons.person_outline_rounded),
         selectedIcon: Icon(Icons.person_rounded),
         label: 'Профиль',

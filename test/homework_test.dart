@@ -49,14 +49,16 @@ void main() {
     setUp(() => SharedPreferences.setMockInitialValues({}));
 
     test('Notes survive a restart, pending ones soonest first', () async {
-      final first = HomeworkProvider();
+      var tick = 0;
+      DateTime fakeClock() => DateTime(2026, 11, 2).add(Duration(seconds: tick++));
+      final first = HomeworkProvider(clock: fakeClock);
       await Future<void>.delayed(Duration.zero);
       await first.add(disciplineTitle: 'Физика', text: ' Задачи 3.14 ', kind: HomeworkKind.quick, due: DateTime(2026, 11, 3, 10, 15));
       final long = await first.add(
           disciplineTitle: 'Инженерная графика', text: 'Чертёж А3', kind: HomeworkKind.long, due: DateTime(2026, 11, 1, 23, 59));
       await first.setDone(long, true);
 
-      final second = HomeworkProvider();
+      final second = HomeworkProvider(clock: fakeClock);
       await Future<void>.delayed(Duration.zero);
       expect(second.pending.map((n) => n.text), ['Задачи 3.14']);
       expect(second.done.single.disciplineTitle, 'Инженерная графика');

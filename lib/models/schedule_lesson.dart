@@ -91,6 +91,8 @@ class ScheduleLesson {
   final List<ScheduleTeacher> teachers;
   final String? streamName;
   final bool isStream;
+  final List<int> subgroups;
+  final int subgroupCount;
 
   ScheduleLesson({
     this.id,
@@ -106,16 +108,30 @@ class ScheduleLesson {
     required this.teachers,
     this.streamName,
     this.isStream = false,
+    this.subgroups = const [],
+    this.subgroupCount = 0,
   });
 
   bool get isNumerator => week == 'ch' || week == 'numerator';
   bool get isDenominator => week == 'zn' || week == 'denominator';
   bool get isEveryWeek => week == 'all' || week.isEmpty;
+  bool get hasSubgroup => subgroups.isNotEmpty;
 
   bool matchesWeek({required bool isNumeratorWeek}) {
     if (isEveryWeek) return true;
     if (isNumeratorWeek) return isNumerator;
     return isDenominator;
+  }
+
+  bool matchesSubgroup(int? subgroup) {
+    if (subgroup == null || subgroup <= 0 || subgroups.isEmpty) return true;
+    return subgroups.contains(subgroup);
+  }
+
+  String? get subgroupLabel {
+    if (subgroups.isEmpty) return null;
+    if (subgroups.length == 1) return '${subgroups.first} подгр.';
+    return '${subgroups.join(', ')} подгр.';
   }
 
   String get audiencesFormatted {
@@ -184,6 +200,8 @@ class ScheduleLesson {
         'teachers': teachers.map((t) => t.toJson()).toList(),
         'streamName': streamName,
         'isStream': isStream,
+        'subgroups': subgroups,
+        'subgroupCount': subgroupCount,
       };
 
   factory ScheduleLesson.fromJson(Map<String, dynamic> json) {
@@ -196,6 +214,15 @@ class ScheduleLesson {
     final teachers = rawTeachers
         .map((t) => ScheduleTeacher.fromJson(t as Map<String, dynamic>))
         .toList();
+
+    final rawSubgroups = json['subgroups'] as List?;
+    final subgroups = rawSubgroups == null
+        ? const <int>[]
+        : rawSubgroups
+            .whereType<num>()
+            .map((e) => e.toInt())
+            .where((e) => e > 0)
+            .toList();
 
     return ScheduleLesson(
       id: json['id'] as String?,
@@ -211,6 +238,8 @@ class ScheduleLesson {
       teachers: teachers,
       streamName: json['streamName'] as String?,
       isStream: json['isStream'] as bool? ?? false,
+      subgroups: subgroups,
+      subgroupCount: (json['subgroupCount'] as num?)?.toInt() ?? 0,
     );
   }
 }

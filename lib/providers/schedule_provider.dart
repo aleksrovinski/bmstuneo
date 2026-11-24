@@ -15,6 +15,7 @@ class ScheduleProvider with ChangeNotifier {
   static const _cacheTimePrefix = 'cached_sched_time_v1_';
   static const _cachedCurrentWeekKey = 'bmstu_cached_current_week_v1';
   static const _cachedCurrentWeekTimeKey = 'bmstu_cached_current_week_time_v1';
+  static const subgroupPrefsKey = 'bmstu_selected_subgroups_v1';
   final BmstuApiService apiService;
 
   /// False for a group the student only looks at in the schedule tab: its schedule
@@ -27,6 +28,8 @@ class ScheduleProvider with ChangeNotifier {
   List<ScheduleLesson> _customLessons = [];
   String _currentGroupUuid = '';
   String _currentGroupTitle = '';
+  int? _selectedSubgroup;
+  String? _loadedSubgroupForUuid;
 
   int _selectedDay = 1; // 1 = ПН, 6 = СБ
   String _selectedWeekFilter = 'current'; // 'current', 'numerator', 'denominator', 'all'
@@ -47,7 +50,32 @@ class ScheduleProvider with ChangeNotifier {
   }
 
   CurrentWeek? get currentWeek => _currentWeek;
-  List<ScheduleLesson> get allLessons => [..._lessons, ..._customLessons];
+  int get subgroupCount {
+    var maxCount = 0;
+    for (final l in _lessons) {
+      if (l.subgroupCount > maxCount) maxCount = l.subgroupCount;
+      for (final s in l.subgroups) {
+        if (s > maxCount) maxCount = s;
+      }
+    }
+    return maxCount > 1 ? maxCount : 1;
+  }
+
+  bool get hasSubgroups => subgroupCount > 1;
+  int? get selectedSubgroup => _selectedSubgroup;
+  int? get effectiveSubgroup {
+    final selected = _selectedSubgroup;
+    if (!hasSubgroups || selected == null || selected < 1 || selected > subgroupCount) {
+      return null;
+    }
+    return selected;
+  }
+
+  List<ScheduleLesson> get rawLessons => List.unmodifiable(_lessons);
+  List<ScheduleLesson> get allLessons => [
+        ..._lessons.where((l) => l.matchesSubgroup(effectiveSubgroup)),
+        ..._customLessons,
+      ];
 
   @visibleForTesting
   set lessonsForTest(List<ScheduleLesson> lessons) => _lessons = lessons;
@@ -70,6 +98,68 @@ class ScheduleProvider with ChangeNotifier {
   void setSelectedWeekFilter(String filter) {
     _selectedWeekFilter = filter;
     notifyListeners();
+  }
+
+  static Future<int?> loadSavedSubgroup(String groupUuid) async {
+    if (groupUuid.isEmpty) return null;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(subgroupPrefsKey);
+      if (raw == null || raw.isEmpty) return null;
+      final decoded = jsonDecode(raw);
+      if (decoded is! Map) return null;
+      final value = decoded[groupUuid];
+      final parsed = value is num ? value.toInt() : int.tryParse(value?.toString() ?? '');
+      return (parsed != null && parsed > 0) ? parsed : null;
+    } catch (e) {
+      debugPrint('[ScheduleProvider] Failed to load saved subgroup: $e');
+      return null;
+    }
+  }
+
+  static Future<void> saveSubgroupForGroup(String groupUuid, int? subgroup) async {
+    if (groupUuid.isEmpty) return;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final map = <String, int>{};
+      final raw = prefs.getString(subgroupPrefsKey);
+      if (raw != null && raw.isNotEmpty) {
+        final decoded = jsonDecode(raw);
+        if (decoded is Map) {
+          for (final entry in decoded.entries) {
+            final key = entry.key.toString();
+            final val = entry.value is num
+                ? (entry.value as num).toInt()
+                : int.tryParse(entry.value?.toString() ?? '');
+            if (val != null && val > 0) map[key] = val;
+          }
+        }
+      }
+      if (subgroup == null || subgroup <= 0) {
+        map.remove(groupUuid);
+      } else {
+        map[groupUuid] = subgroup;
+      }
+      if (map.isEmpty) {
+        await prefs.remove(subgroupPrefsKey);
+      } else {
+        await prefs.setString(subgroupPrefsKey, jsonEncode(map));
+      }
+    } catch (e) {
+      debugPrint('[ScheduleProvider] Failed to save subgroup: $e');
+    }
+  }
+
+  Future<void> setSelectedSubgroup(int? subgroup) async {
+    final normalized = (subgroup != null && subgroup > 0) ? subgroup : null;
+    if (_selectedSubgroup == normalized) return;
+    _selectedSubgroup = normalized;
+    _loadedSubgroupForUuid = _currentGroupUuid;
+    notifyListeners();
+    _syncWidget();
+    if (isPrimary && _currentGroupUuid.isNotEmpty) {
+      await saveSubgroupForGroup(_currentGroupUuid, normalized);
+    }
   }
 
   Future<void> _saveScheduleToCache(String groupUuid, List<ScheduleLesson> lessons) async {
@@ -208,9 +298,21 @@ class ScheduleProvider with ChangeNotifier {
 
   // Load schedule for group with offline cache support
   Future<void> loadSchedule({required String groupUuid, required String groupTitle}) async {
+    final groupChanged = _currentGroupUuid != groupUuid;
     _currentGroupUuid = groupUuid;
     _currentGroupTitle = groupTitle;
     _errorMessage = null;
+
+    if (groupChanged) {
+      _lessons = [];
+      _selectedSubgroup = null;
+      _loadedSubgroupForUuid = null;
+    }
+
+    if (isPrimary && groupUuid.isNotEmpty && _loadedSubgroupForUuid != groupUuid) {
+      _selectedSubgroup = await loadSavedSubgroup(groupUuid);
+      _loadedSubgroupForUuid = groupUuid;
+    }
 
     // Fast offline preview if lessons or current week are not loaded yet
     if (_currentWeek == null) {
@@ -343,17 +445,23 @@ class ScheduleProvider with ChangeNotifier {
 
   String get tomorrowDayTitle => getWeekdayFullName(tomorrowWeekday);
 
+  static int _compareLessons(ScheduleLesson a, ScheduleLesson b) {
+    final timeCmp = a.startTime.compareTo(b.startTime);
+    if (timeCmp != 0) return timeCmp;
+    final slotCmp = a.time.compareTo(b.time);
+    if (slotCmp != 0) return slotCmp;
+    final subA = a.subgroups.isEmpty ? 0 : a.subgroups.first;
+    final subB = b.subgroups.isEmpty ? 0 : b.subgroups.first;
+    return subA.compareTo(subB);
+  }
+
   // Filter lessons for tomorrow
   List<ScheduleLesson> get lessonsForTomorrow {
     if (tomorrowWeekday < 1 || tomorrowWeekday > 7) return [];
     final dayLessons = allLessons.where((l) => l.day == tomorrowWeekday).toList();
     final isNum = isTomorrowNumerator;
     final filtered = dayLessons.where((l) => l.matchesWeek(isNumeratorWeek: isNum)).toList();
-    filtered.sort((a, b) {
-      final timeCmp = a.startTime.compareTo(b.startTime);
-      if (timeCmp != 0) return timeCmp;
-      return a.time.compareTo(b.time);
-    });
+    filtered.sort(_compareLessons);
     return filtered;
   }
 
@@ -373,11 +481,7 @@ class ScheduleProvider with ChangeNotifier {
       filtered = dayLessons.where((l) => l.matchesWeek(isNumeratorWeek: isNum)).toList();
     }
 
-    filtered.sort((a, b) {
-      final timeCmp = a.startTime.compareTo(b.startTime);
-      if (timeCmp != 0) return timeCmp;
-      return a.time.compareTo(b.time);
-    });
+    filtered.sort(_compareLessons);
     return filtered;
   }
 
@@ -500,11 +604,7 @@ class ScheduleProvider with ChangeNotifier {
         final dayLessons = allLessons
             .where((l) => l.day == checkWeekday && l.matchesWeek(isNumeratorWeek: isCheckNumerator))
             .toList();
-        dayLessons.sort((a, b) {
-          final timeCmp = a.startTime.compareTo(b.startTime);
-          if (timeCmp != 0) return timeCmp;
-          return a.time.compareTo(b.time);
-        });
+        dayLessons.sort(_compareLessons);
 
         if (dayLessons.isNotEmpty) {
           final nextLesson = dayLessons.first;

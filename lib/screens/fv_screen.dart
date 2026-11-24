@@ -19,6 +19,7 @@ class FvScreen extends StatelessWidget {
     final sched = context.watch<ScheduleProvider>();
     final data = fv.data;
     final currentWeekNum = sched.currentWeek?.weekNumber ?? 1;
+    final passport = data?.healthPassportInfo() ?? const HealthPassportInfo.unknown();
 
     return Scaffold(
       appBar: AppBar(
@@ -89,6 +90,10 @@ class FvScreen extends StatelessWidget {
                   child: Center(child: CircularProgressIndicator()),
                 ),
               ] else ...[
+                if (!auth.isGuest && passport.needsAttention) ...[
+                  _buildHealthPassportWarningBanner(context, passport),
+                  const SizedBox(height: 16),
+                ],
                 // 1. Progress Cards (Bally & Poseshcheniya)
                 Row(
                   children: [
@@ -136,12 +141,14 @@ class FvScreen extends StatelessWidget {
                   children: [
                     Icon(Icons.assignment_turned_in_rounded, size: 20, color: colorScheme.primary),
                     const SizedBox(width: 8),
-                    Text(
-                      'Текущие записи к преподавателям',
-                      style: TextStyle(
-                        fontSize: 17,
-                        fontWeight: FontWeight.w700,
-                        color: colorScheme.onSurface,
+                    Expanded(
+                      child: Text(
+                        'Текущие записи к преподавателям',
+                        style: TextStyle(
+                          fontSize: 17,
+                          fontWeight: FontWeight.w700,
+                          color: colorScheme.onSurface,
+                        ),
                       ),
                     ),
                   ],
@@ -160,12 +167,14 @@ class FvScreen extends StatelessWidget {
                   children: [
                     Icon(Icons.medical_services_rounded, size: 20, color: colorScheme.primary),
                     const SizedBox(width: 8),
-                    Text(
-                      'Медицинская группа',
-                      style: TextStyle(
-                        fontSize: 17,
-                        fontWeight: FontWeight.w700,
-                        color: colorScheme.onSurface,
+                    Expanded(
+                      child: Text(
+                        'Паспорт здоровья',
+                        style: TextStyle(
+                          fontSize: 17,
+                          fontWeight: FontWeight.w700,
+                          color: colorScheme.onSurface,
+                        ),
                       ),
                     ),
                   ],
@@ -180,12 +189,14 @@ class FvScreen extends StatelessWidget {
                     children: [
                       Icon(Icons.history_rounded, size: 20, color: colorScheme.primary),
                       const SizedBox(width: 8),
-                      Text(
-                        'История по семестрам',
-                        style: TextStyle(
-                          fontSize: 17,
-                          fontWeight: FontWeight.w700,
-                          color: colorScheme.onSurface,
+                      Expanded(
+                        child: Text(
+                          'История по семестрам',
+                          style: TextStyle(
+                            fontSize: 17,
+                            fontWeight: FontWeight.w700,
+                            color: colorScheme.onSurface,
+                          ),
                         ),
                       ),
                     ],
@@ -635,19 +646,91 @@ class FvScreen extends StatelessWidget {
     );
   }
 
+  Widget _buildHealthPassportWarningBanner(BuildContext context, HealthPassportInfo passport) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final isDark = theme.brightness == Brightness.dark;
+    final isExpired = passport.isExpired;
+
+    final bg = isExpired
+        ? colorScheme.errorContainer.withValues(alpha: 0.75)
+        : (isDark ? const Color(0xFFF59E0B).withValues(alpha: 0.16) : const Color(0xFFFEF3C7));
+    final border = isExpired
+        ? colorScheme.error.withValues(alpha: 0.5)
+        : const Color(0xFFF59E0B).withValues(alpha: isDark ? 0.45 : 0.5);
+    final iconColor = isExpired
+        ? colorScheme.error
+        : (isDark ? const Color(0xFFFBBF24) : const Color(0xFFB45309));
+    final titleColor = isExpired
+        ? colorScheme.onErrorContainer
+        : (isDark ? const Color(0xFFFBBF24) : const Color(0xFFB45309));
+    final bodyColor = isExpired
+        ? colorScheme.onErrorContainer
+        : (isDark ? colorScheme.onSurface : const Color(0xFF78350F));
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(
+                isExpired ? Icons.gpp_bad_rounded : Icons.warning_amber_rounded,
+                color: iconColor,
+                size: 24,
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  passport.warningTitle ?? '',
+                  style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w800,
+                    color: titleColor,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            passport.warningDescription ?? '',
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w500,
+              color: bodyColor,
+              height: 1.3,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildMedicalCard(BuildContext context, PhysicalCultureData? data) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     final isDark = theme.brightness == Brightness.dark;
+    final passport = data?.healthPassportInfo() ?? const HealthPassportInfo.unknown();
+
+    final borderColor = passport.isExpired
+        ? colorScheme.error.withValues(alpha: 0.5)
+        : (passport.isExpiringSoon
+            ? const Color(0xFFF59E0B).withValues(alpha: 0.5)
+            : colorScheme.outlineVariant);
 
     return Container(
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
         color: isDark ? colorScheme.surfaceContainer : colorScheme.surfaceContainerLow,
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(
-          color: colorScheme.outlineVariant,
-        ),
+        border: Border.all(color: borderColor),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -709,19 +792,53 @@ class FvScreen extends StatelessWidget {
                 Icon(
                   Icons.calendar_today_rounded,
                   size: 14,
-                  color: colorScheme.onSurfaceVariant,
+                  color: passport.isExpired
+                      ? colorScheme.error
+                      : (passport.isExpiringSoon
+                          ? (isDark ? const Color(0xFFFBBF24) : const Color(0xFFB45309))
+                          : colorScheme.onSurfaceVariant),
                 ),
                 const SizedBox(width: 6),
-                Text(
-                  'Справка действует до: ${data.medDate}',
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w500,
-                    color: colorScheme.onSurfaceVariant,
+                Expanded(
+                  child: Text(
+                    passport.expiryDate != null
+                        ? '${passport.isExpired ? 'Действовал до' : 'Действует до'}: ${passport.formattedFullDate}'
+                        : 'Справка действует до: ${data.medDate}',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: passport.needsAttention ? FontWeight.w600 : FontWeight.w500,
+                      color: passport.isExpired
+                          ? colorScheme.error
+                          : (passport.isExpiringSoon
+                              ? (isDark ? const Color(0xFFFBBF24) : const Color(0xFFB45309))
+                              : colorScheme.onSurfaceVariant),
+                    ),
                   ),
                 ),
               ],
             ),
+            if (passport.shortBadge != null) ...[
+              const SizedBox(height: 10),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: passport.isExpired
+                      ? colorScheme.errorContainer
+                      : (isDark ? const Color(0xFFF59E0B).withValues(alpha: 0.2) : const Color(0xFFFEF3C7)),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Text(
+                  passport.shortBadge!,
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    color: passport.isExpired
+                        ? colorScheme.onErrorContainer
+                        : (isDark ? const Color(0xFFFBBF24) : const Color(0xFFB45309)),
+                  ),
+                ),
+              ),
+            ],
           ],
         ],
       ),

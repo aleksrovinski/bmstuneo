@@ -125,6 +125,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               trailing: const Icon(Icons.chevron_right_rounded),
               onTap: _pickPrimaryGroup,
             ),
+            if (sched.hasSubgroups) _buildSubgroupTile(context, sched),
             if (auth.hasPrimaryOverride)
               ListTile(
                 leading: const Icon(Icons.undo_rounded),
@@ -213,6 +214,62 @@ class _SettingsScreenState extends State<SettingsScreen> {
   String _syncLine(bool? isLive, DateTime? updated, DateFormat format, String count) {
     if (updated == null) return 'Ещё не загружено';
     return '${isLive == true ? 'Обновлено' : 'Сохранённая копия'} ${format.format(updated)} · $count';
+  }
+
+  Widget _buildSubgroupTile(BuildContext context, ScheduleProvider sched) {
+    final scheme = Theme.of(context).colorScheme;
+    final selectedSubgroup = sched.effectiveSubgroup;
+
+    Widget chip(String label, int? value) {
+      final isSelected = selectedSubgroup == value;
+      return ChoiceChip(
+        label: Text(label),
+        selected: isSelected,
+        showCheckmark: false,
+        visualDensity: VisualDensity.compact,
+        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        selectedColor: scheme.primaryContainer,
+        backgroundColor: scheme.surfaceContainerHighest,
+        side: BorderSide(
+          color: isSelected
+              ? scheme.primary.withValues(alpha: 0.4)
+              : scheme.outlineVariant.withValues(alpha: 0.6),
+        ),
+        labelStyle: TextStyle(
+          fontSize: 12.5,
+          fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+          color: isSelected ? scheme.onPrimaryContainer : scheme.onSurfaceVariant,
+        ),
+        onSelected: (_) => sched.setSelectedSubgroup(value),
+      );
+    }
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.people_outline_rounded, color: scheme.onSurfaceVariant),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Text('Подгруппа', style: Theme.of(context).textTheme.bodyLarge),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              chip('Все', null),
+              for (var i = 1; i <= sched.subgroupCount; i++) chip('Подгруппа $i', i),
+            ],
+          ),
+        ],
+      ),
+    );
   }
 
   Widget _buildThemeTile(BuildContext context, ThemeProvider themeProv) {

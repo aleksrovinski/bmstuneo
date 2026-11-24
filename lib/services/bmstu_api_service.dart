@@ -430,7 +430,9 @@ class BmstuApiService {
           final data = privResp.data['data'] ?? privResp.data;
           final sched = data?['schedule'] as List?;
           if (sched != null && sched.isNotEmpty) {
-            return LksParsers.schedule(sched);
+            final respUuid = data is Map ? data['uuid']?.toString() : null;
+            final resolvedUuid = (respUuid != null && respUuid.isNotEmpty) ? respUuid : groupUuid;
+            return LksParsers.schedule(sched, groupUuid: resolvedUuid);
           }
         }
       } catch (e) {
@@ -444,7 +446,9 @@ class BmstuApiService {
       final data = pubResp.data['data'] ?? pubResp.data;
       final sched = data?['schedule'] as List?;
       if (sched != null) {
-        return LksParsers.schedule(sched);
+        final respUuid = data is Map ? data['uuid']?.toString() : null;
+        final resolvedUuid = (respUuid != null && respUuid.isNotEmpty) ? respUuid : groupUuid;
+        return LksParsers.schedule(sched, groupUuid: resolvedUuid);
       }
     }
 

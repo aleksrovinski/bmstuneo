@@ -1,3 +1,5 @@
+import 'dart:math' show max;
+
 import '../models/discipline_progress.dart';
 import '../models/schedule_lesson.dart';
 import '../models/session_result.dart';
@@ -6,8 +8,13 @@ import '../constants/moscow_time.dart';
 /// Turns raw LKS responses (JSON and scraped HTML) into the app's models.
 /// No network and no state: everything here can be tested on a string.
 abstract final class LksParsers {
+  static int _toInt(Object? value) =>
+      value is num ? value.toInt() : int.tryParse(value?.toString() ?? '') ?? 0;
+
   /// Lessons of a group or teacher schedule as LKS returns them.
-  static List<ScheduleLesson> schedule(List<dynamic> rawList) {
+  static List<ScheduleLesson> schedule(List<dynamic> rawList, {String? groupUuid}) {
+    final targetUuid =
+        (groupUuid != null && groupUuid.isNotEmpty) ? groupUuid.toLowerCase() : null;
     return rawList.map((item) {
       final map = item as Map<String, dynamic>;
 
@@ -68,6 +75,33 @@ abstract final class LksParsers {
       }
       final isStream = streamName != null && (streamName.contains(';') || streamName.contains(','));
 
+      var subgroups = const <int>[];
+      var subgroupCount = 0;
+      if (targetUuid != null) {
+        final streamGroups = stream?['groups'] as List? ?? const [];
+        final specificSubgroups = <int>{};
+        var hasWholeGroup = false;
+        var maxSubgroupCount = 0;
+
+        for (final g in streamGroups) {
+          if (g is! Map) continue;
+          if (g['groupUuid']?.toString().toLowerCase() != targetUuid) continue;
+          final sub1 = _toInt(g['sub1']);
+          final sub2 = _toInt(g['sub2']);
+          maxSubgroupCount = max(maxSubgroupCount, max(sub1, sub2));
+          if (sub1 == 0) {
+            hasWholeGroup = true;
+          } else if (sub1 > 0) {
+            specificSubgroups.add(sub1);
+          }
+        }
+
+        subgroupCount = maxSubgroupCount;
+        if (!hasWholeGroup && specificSubgroups.isNotEmpty) {
+          subgroups = specificSubgroups.toList()..sort();
+        }
+      }
+
       return ScheduleLesson(
         day: (map['day'] as num?)?.toInt() ?? 1,
         time: (map['time'] as num?)?.toInt() ?? 1,
@@ -80,6 +114,8 @@ abstract final class LksParsers {
         teachers: teachers,
         streamName: streamName,
         isStream: isStream,
+        subgroups: subgroups,
+        subgroupCount: subgroupCount,
       );
     }).toList();
   }

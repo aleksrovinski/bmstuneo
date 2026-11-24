@@ -14,6 +14,7 @@ import '../widgets/home_hero_card.dart';
 import '../widgets/offline_status_banner.dart';
 import '../widgets/mail_inbox_button.dart';
 import '../models/nearest_pe_lesson.dart';
+import '../models/physical_culture.dart';
 import '../services/widget_sync_service.dart';
 import '../constants/moscow_time.dart';
 
@@ -78,6 +79,7 @@ class _HomeScreenState extends State<HomeScreen> {
       lessons: sched.allLessons,
       isCurrentWeekNumerator: sched.currentWeek?.isNumerator ?? true,
     );
+    final healthPassport = fv.healthPassport;
 
     return Scaffold(
       appBar: AppBar(
@@ -86,8 +88,11 @@ class _HomeScreenState extends State<HomeScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              auth.isGuest ? 'Гостевой режим' : (user?.groupTitle ?? 'Студент'),
+              '${auth.isGuest ? 'Гостевой режим' : (user?.groupTitle ?? 'Студент')}'
+              '${sched.effectiveSubgroup != null ? ' · ${sched.effectiveSubgroup} подгр.' : ''}',
               style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: theme.colorScheme.primary),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
             ),
             Text(
               auth.isGuest ? 'МГТУ им. Н.Э. Баумана' : '${user?.lastName} ${user?.firstName}',
@@ -167,6 +172,8 @@ class _HomeScreenState extends State<HomeScreen> {
 
               // 2. Physical Culture Quick Card
               if (auth.isFullAuth || nearestPe != null) ...[_buildFvBanner(context, fv, nearestPe)],
+              if (auth.isFullAuth && healthPassport.needsAttention)
+                _buildHealthPassportBanner(context, healthPassport),
 
               // The student's own homework notes; hidden until they are read, so a slow
               // first launch doesn't look like they are gone
@@ -364,6 +371,79 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                 ),
                 Icon(Icons.chevron_right_rounded, color: scheme.onSurfaceVariant, size: 20),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildHealthPassportBanner(BuildContext context, HealthPassportInfo passport) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final isDark = theme.brightness == Brightness.dark;
+    final isExpired = passport.isExpired;
+
+    final bg = isExpired
+        ? scheme.errorContainer.withValues(alpha: 0.75)
+        : (isDark ? const Color(0xFFF59E0B).withValues(alpha: 0.16) : const Color(0xFFFEF3C7));
+    final border = isExpired
+        ? scheme.error.withValues(alpha: 0.5)
+        : const Color(0xFFF59E0B).withValues(alpha: isDark ? 0.45 : 0.5);
+    final iconColor = isExpired
+        ? scheme.error
+        : (isDark ? const Color(0xFFFBBF24) : const Color(0xFFB45309));
+    final titleColor = isExpired
+        ? scheme.onErrorContainer
+        : (isDark ? const Color(0xFFFBBF24) : const Color(0xFFB45309));
+    final subtitleColor = isExpired
+        ? scheme.onErrorContainer
+        : (isDark ? scheme.onSurface : const Color(0xFF78350F));
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      child: Material(
+        color: bg,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(18),
+          side: BorderSide(color: border),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: widget.onOpenFv,
+          borderRadius: BorderRadius.circular(18),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(12, 10, 8, 10),
+            child: Row(
+              children: [
+                Icon(
+                  isExpired ? Icons.gpp_bad_rounded : Icons.warning_amber_rounded,
+                  color: iconColor,
+                  size: 22,
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        passport.warningTitle ?? '',
+                        style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700, color: titleColor),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        passport.homeSubtitle ?? '',
+                        style: TextStyle(fontSize: 12, color: subtitleColor),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                  ),
+                ),
+                Icon(Icons.chevron_right_rounded, color: iconColor, size: 20),
               ],
             ),
           ),

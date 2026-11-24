@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/user_profile.dart';
+import '../providers/schedule_provider.dart';
 import '../services/auth_storage.dart';
 import '../services/background_sync.dart';
 import '../services/bmstu_api_service.dart';
@@ -363,6 +364,7 @@ class AuthProvider with ChangeNotifier {
       await prefs.remove(_keyGuestGroupTitle);
       await prefs.remove(_keyGuestGroupUuid);
       await prefs.remove(primaryGroupKey);
+      await prefs.remove(ScheduleProvider.subgroupPrefsKey);
     } catch (e) {
       debugPrint('[AuthProvider] Failed to clear saved session on logout: $e');
     }

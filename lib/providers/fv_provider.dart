@@ -31,6 +31,14 @@ class FvProvider with ChangeNotifier {
   List<FvRecord> get currentRecords => _data?.groups ?? [];
   String get medGroup => _data?.medGroup ?? 'Не указана';
   String get medDate => _data?.medDate ?? '—';
+  HealthPassportInfo get healthPassport =>
+      _data?.healthPassportInfo() ?? const HealthPassportInfo.unknown();
+
+  @visibleForTesting
+  set dataForTest(PhysicalCultureData? value) {
+    _data = value;
+    notifyListeners();
+  }
 
   Future<void> _saveFvToCache(String stageUuid, PhysicalCultureData data) async {
     try {
