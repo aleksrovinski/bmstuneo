@@ -30,6 +30,8 @@ json.dump({
 }, open(sys.argv[1], "w"), ensure_ascii=False, indent=2)
 PY
 sed -i '' -E "s#android: \"downloads/[^\"]*\"#android: \"downloads/$FILE\"#; s#androidSize: \"[^\"]*\"#androidSize: \"$(( (SIZE + 500000) / 1000000 )) МБ\"#" "$SITE_DIR/script.js"
+# The page links the APK directly too, so it works without JavaScript (and for crawlers)
+sed -i '' -E "s#downloads/bmstu-neo-[^\"]*\.apk#downloads/$FILE#g" "$SITE_DIR/index.html"
 
 rsync -az --delete --exclude .git --exclude .gitignore --exclude README.md "$SITE_DIR/" "$HOST:/var/www/bmstuneo/"
 ssh "$HOST" 'chmod -R a+rX /var/www/bmstuneo'
