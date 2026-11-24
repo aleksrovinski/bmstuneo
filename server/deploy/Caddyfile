@@ -47,5 +47,9 @@ bmstuneo.xyz {
 		header @revalidate Cache-Control no-cache
 		@apk path *.apk
 		header @apk Content-Type application/vnd.android.package-archive
+		# Lets the iOS app offer to save its logins in iCloud Keychain (webcredentials);
+		# the file has no extension, so its JSON type is set here
+		@aasa path /.well-known/apple-app-site-association
+		header @aasa Content-Type application/json
 	}
 }
