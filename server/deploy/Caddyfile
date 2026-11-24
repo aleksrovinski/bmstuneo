@@ -1,6 +1,21 @@
 # Xray (VLESS Reality) owns :443 and forwards ordinary HTTPS visitors here, to 127.0.0.1:8443
 {
 	https_port 8443
+
+	# Xray prepends a PROXY protocol header with the visitor's real address (realitySettings
+	# "xver": 1), otherwise every visitor looks like 127.0.0.1 and the push server's per-IP
+	# rate limit becomes one limit shared by everyone. Needs Caddy 2.7+.
+	# Turn both sides on together: without the header from Xray, or without this wrapper
+	# in Caddy, TLS on 8443 breaks.
+	servers 127.0.0.1:8443 {
+		listener_wrappers {
+			proxy_protocol {
+				timeout 2s
+				allow 127.0.0.1/32
+			}
+			tls
+		}
+	}
 }
 
 http://bmstuneo.xyz {

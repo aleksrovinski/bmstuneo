@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 import 'package:shelf/shelf.dart';
 import 'package:shelf_router/shelf_router.dart';
 import 'device.dart';
@@ -31,9 +32,11 @@ Handler buildHandler({
   final router = Router();
 
   router.post('/v1/devices', (Request request) async {
+    final raw = await _readLimited(request);
+    if (raw == null) return _error(413, 'body too large');
     final Map<String, dynamic> body;
     try {
-      body = jsonDecode(await request.readAsString()) as Map<String, dynamic>;
+      body = jsonDecode(utf8.decode(raw)) as Map<String, dynamic>;
     } catch (_) {
       return _error(400, 'invalid JSON');
     }
@@ -123,11 +126,23 @@ Handler buildHandler({
 Response _error(int status, String message) =>
     Response(status, body: jsonEncode({'error': message}), headers: {'content-type': 'application/json'});
 
+// Rejects early when Content-Length already says too much
 Middleware _limitBody() => (inner) => (request) {
       final length = request.contentLength;
       if (length != null && length > _maxBodyBytes) return _error(413, 'body too large');
       return inner(request);
     };
+
+/// Reads the body, giving up (null) past [_maxBodyBytes]. A chunked body has no
+/// Content-Length, so [_limitBody] can't see its size; this stops reading in time.
+Future<List<int>?> _readLimited(Request request) async {
+  final bytes = BytesBuilder(copy: false);
+  await for (final chunk in request.read()) {
+    if (bytes.length + chunk.length > _maxBodyBytes) return null;
+    bytes.add(chunk);
+  }
+  return bytes.takeBytes();
+}
 
 /// Fixed-window limit per client IP; enough to stop scripted abuse of a tiny API.
 ///
@@ -158,10 +173,15 @@ class RateLimiter {
         return inner(request);
       };
 
-  /// Behind a reverse proxy the client is the first X-Forwarded-For entry.
+  /// Behind a reverse proxy the client is the LAST X-Forwarded-For entry: the one our
+  /// own proxy wrote. Earlier entries come from the client and can be anything, so
+  /// trusting the first one would let a script pick a fresh "IP" for every request.
   static String clientIp(Request request) {
     final forwarded = request.headers['x-forwarded-for'];
-    if (forwarded != null && forwarded.isNotEmpty) return forwarded.split(',').first.trim();
+    if (forwarded != null && forwarded.trim().isNotEmpty) {
+      final last = forwarded.split(',').last.trim();
+      return InternetAddress.tryParse(last) != null ? last : 'unknown';
+    }
     final info = request.context['shelf.io.connection_info'];
     return info is HttpConnectionInfo ? info.remoteAddress.address : 'unknown';
   }

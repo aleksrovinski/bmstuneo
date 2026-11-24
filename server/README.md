@@ -15,9 +15,17 @@ platform and the group UUID.
 | `GET` | `/internal/stats` | `{"devices": N}`; `Authorization: Bearer $ADMIN_TOKEN` |
 | `POST` | `/internal/tick` | runs one scheduling pass now; `Authorization: Bearer $ADMIN_TOKEN`; 404 if no token is configured |
 
-Limits: 8 KB bodies, 60 requests/min per IP. Requests whose address is loopback (a reverse proxy
-that doesn't know the real client, e.g. Caddy behind Xray without PROXY protocol) share one
-bucket of 1200 requests/min instead. The installation secret is stored as SHA-256 only.
+Limits: 8 KB bodies (chunked ones included), 60 requests/min per IP. The client IP is the last
+`X-Forwarded-For` entry, i.e. the one written by our own proxy; earlier entries are the client's
+and are ignored. Requests whose address is loopback or unknown (a reverse proxy that doesn't know
+the real client) share one bucket of 1200 requests/min instead. The installation secret is stored
+as SHA-256 only.
+
+Real client IPs behind Xray: Xray (VLESS Reality on :443) hands ordinary HTTPS visitors to Caddy
+on 127.0.0.1:8443. Caddy only learns their address if Xray sends a PROXY protocol header, so the
+Xray inbound needs `"xver": 1` in `realitySettings`, and the Caddyfile has a matching
+`proxy_protocol` listener wrapper (Caddy 2.7+). Change both together, Caddy first, Xray right
+after: in between, HTTPS on the site fails. Check with `curl https://bmstuneo.xyz/healthz`.
 
 ## Configuration (environment)
 

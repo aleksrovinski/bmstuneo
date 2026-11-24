@@ -97,6 +97,27 @@ void main() {
     expect((await register(device(), ip: '10.0.0.10')).statusCode, isNot(429), reason: 'other clients unaffected');
   });
 
+  test('A forged X-Forwarded-For doesn\'t buy a fresh limit: the proxy\'s entry counts', () async {
+    final statuses = [
+      for (var i = 0; i < 61; i++) (await register(device(), ip: '1.2.3.$i, 10.0.0.20')).statusCode,
+    ];
+    expect(statuses.last, 429);
+
+    expect(RateLimiter.clientIp(Request('GET', Uri.parse('http://localhost/'),
+        headers: {'x-forwarded-for': 'garbage'})), 'unknown');
+  });
+
+  test('A chunked body without Content-Length is still capped', () async {
+    final big = utf8.encode('{"pad":"${'x' * 20000}"}');
+    final response = await handler(Request(
+      'POST',
+      Uri.parse('http://localhost/v1/devices'),
+      body: Stream.fromIterable([for (var i = 0; i < big.length; i += 1000) big.sublist(i, (i + 1000).clamp(0, big.length))]),
+      headers: {'x-forwarded-for': '10.0.0.30'},
+    ));
+    expect(response.statusCode, 413);
+  });
+
   test('Clients hidden behind a proxy address share a larger limit', () async {
     final limiter = RateLimiter(maxPerMinute: 2, sharedMaxPerMinute: 5);
     expect([for (var i = 0; i < 3; i++) limiter.allow('10.0.0.9', now)], [true, true, false]);
