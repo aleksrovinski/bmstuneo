@@ -5,6 +5,7 @@ import 'demo/demo_api_service.dart';
 import 'demo/demo_data.dart';
 import 'demo/demo_mail_service.dart';
 import 'main.dart';
+import 'services/release_logging.dart';
 
 /// Demo build with sample data: `flutter run -t lib/main_demo.dart`.
 ///
@@ -12,6 +13,7 @@ import 'main.dart';
 /// credentials live apart from the real app's, so trying the demo on a phone with
 /// BMSTU neo installed doesn't log the student out or mix up their data.
 void main() {
+  silenceDebugLogsInRelease();
   WidgetsFlutterBinding.ensureInitialized();
   AppMode.isDemo = true;
   // Must run before anything opens SharedPreferences

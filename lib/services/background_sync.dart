@@ -21,11 +21,13 @@ import 'push_channel.dart';
 import 'secure_cookie_storage.dart';
 import 'widget_sync_service.dart';
 import 'cache_store.dart';
+import 'release_logging.dart';
 
 /// Entry point the OS calls in the background (Android WorkManager, iOS Background
 /// App Refresh). A silent push will call [BackgroundSync.run] the same way.
 @pragma('vm:entry-point')
 void backgroundSyncDispatcher() {
+  silenceDebugLogsInRelease();
   Workmanager().executeTask((task, inputData) async {
     WidgetsFlutterBinding.ensureInitialized();
     DartPluginRegistrant.ensureInitialized();
@@ -193,7 +195,7 @@ class BackgroundSync {
     AuthStorage storage, {
     Future<void> Function(List<ProgressAlert>)? deliver,
   }) async {
-    final stageUuid = _cachedProfile(prefs)?.stageUuid;
+    final stageUuid = (await _cachedProfile())?.stageUuid;
     if (stageUuid == null || stageUuid.isEmpty) return const [];
 
     List<DisciplineProgress> fresh;
@@ -269,7 +271,7 @@ class BackgroundSync {
   /// Reloads the group's schedule (public, no session needed) and stores a fresh widget
   /// snapshot; on Android the push's follow-up WidgetRefreshWorker redraws the widget from it.
   static Future<void> _refreshScheduleWidget(SharedPreferences prefs, BmstuApiService service) async {
-    final profile = _cachedProfile(prefs);
+    final profile = await _cachedProfile();
     if (profile == null) return;
     // The primary group chosen in settings, otherwise the student's own
     var groupUuid = profile.groupUuid;
@@ -294,8 +296,8 @@ class BackgroundSync {
     }
   }
 
-  static UserProfile? _cachedProfile(SharedPreferences prefs) {
-    final raw = prefs.getString(AuthProvider.cachedProfileKey);
+  static Future<UserProfile?> _cachedProfile() async {
+    final raw = await CacheStore.instance.read(AuthProvider.cachedProfileKey);
     if (raw == null || raw.isEmpty) return null;
     try {
       return UserProfile.fromJson(jsonDecode(raw) as Map<String, dynamic>);

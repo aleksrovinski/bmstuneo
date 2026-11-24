@@ -31,17 +31,41 @@ class CacheStore {
     'teacher_sched_',
     'bmstu_session_results_cache',
     'bmstu_groups_catalog_v1',
+    profileKey,
   ];
+
+  /// The signed-in student's profile (name, birth date, card number, QR pass link).
+  /// Kept here and not in preferences, because preferences go into the device backup,
+  /// and a restored profile is useless anyway without the session and password.
+  /// It is session state rather than cache, so [clear] leaves it alone.
+  static const profileKey = 'bmstu_cached_user_profile_v1';
 
   static bool isCacheKey(String key) => cachePrefixes.any(key.startsWith);
 
-  final Future<Directory?> _directory;
+  final Future<Directory?> Function() _findDirectory;
+  Directory? _knownDirectory;
+  bool _directoryKnown = false;
   final _random = Random();
 
-  CacheStore() : _directory = _defaultDirectory();
+  CacheStore() : _findDirectory = _defaultDirectory;
 
   /// Files in [directory]; used by tests.
-  CacheStore.inDirectory(Directory directory) : _directory = Future.value(directory);
+  CacheStore.inDirectory(Directory directory)
+      : _findDirectory = (() async => directory),
+        _knownDirectory = directory,
+        _directoryKnown = true;
+
+  // Remembers the directory itself, not a Future of it: a completed Future runs its
+  // listeners in the zone it was created in, so one created during an earlier widget
+  // test (a fake-clock zone that no longer runs) would hang every later await on it.
+  // Looking it up twice at first use is harmless.
+  Future<Directory?> get _directory async {
+    if (_directoryKnown) return _knownDirectory;
+    final directory = await _findDirectory();
+    _knownDirectory = directory;
+    _directoryKnown = true;
+    return directory;
+  }
 
   static Future<Directory?> _defaultDirectory() async {
     // `flutter test`: no real file I/O inside widget tests (it never completes under
@@ -116,16 +140,18 @@ class CacheStore {
     return result;
   }
 
-  /// Deletes all cached data; settings and the student's own notes are not touched.
+  /// Deletes all cached data; settings, the student's own notes and the signed-in
+  /// profile ([profileKey]) are not touched.
   Future<void> clear() async {
     final dir = await _directory;
     if (dir != null && await dir.exists()) {
+      final kept = _file(dir, profileKey).path;
       await for (final entity in dir.list()) {
-        if (entity is File) await entity.delete();
+        if (entity is File && entity.path != kept) await entity.delete();
       }
     }
     final prefs = await SharedPreferences.getInstance();
-    for (final key in prefs.getKeys().where(isCacheKey).toList()) {
+    for (final key in prefs.getKeys().where((k) => isCacheKey(k) && k != profileKey).toList()) {
       await prefs.remove(key);
     }
   }

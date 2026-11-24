@@ -27,8 +27,10 @@ import 'screens/main_navigation_screen.dart';
 import 'widgets/bmstu_neo_logo.dart';
 import 'constants/app_version.dart';
 import 'services/cache_store.dart';
+import 'services/release_logging.dart';
 
 void main() {
+  silenceDebugLogsInRelease();
   WidgetsFlutterBinding.ensureInitialized();
   // Registers the background progress check (scheduled only if the student enables it)
   Workmanager().initialize(backgroundSyncDispatcher);

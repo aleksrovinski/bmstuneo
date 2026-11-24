@@ -67,6 +67,21 @@ void main() {
     expect(await store.read('bmstu_groups_catalog_v1'), 'catalog');
   });
 
+  test('The profile leaves the backed-up preferences and survives "clear cache"', () async {
+    SharedPreferences.setMockInitialValues({CacheStore.profileKey: '{"lastName":"Тестов"}'});
+    final prefs = await SharedPreferences.getInstance();
+
+    await store.migrateLegacy();
+    expect(prefs.getString(CacheStore.profileKey), isNull, reason: 'preferences go into the Google backup');
+    expect(await store.read(CacheStore.profileKey), '{"lastName":"Тестов"}');
+
+    await store.write('cached_sched_v1_g', 'schedule');
+    await store.clear();
+    expect(await store.read('cached_sched_v1_g'), isNull);
+    expect(await store.read(CacheStore.profileKey), '{"lastName":"Тестов"}',
+        reason: 'clearing the cache must not sign the student out of offline mode');
+  });
+
   test('The settings screen counts and clears cached data only', () async {
     SharedPreferences.setMockInitialValues({'cached_fv_v1_old': 'ёж', 'homework_notes_v1': 'my notes'});
     CacheStore.instance = store;

@@ -8,9 +8,10 @@ import '../services/auth_storage.dart';
 import '../services/background_sync.dart';
 import '../services/bmstu_api_service.dart';
 import '../services/bmstu_groups_catalog.dart';
+import '../services/cache_store.dart';
 
 class AuthProvider with ChangeNotifier {
-  static const cachedProfileKey = 'bmstu_cached_user_profile_v1';
+  static const cachedProfileKey = CacheStore.profileKey;
   static const _keyIsGuest = 'bmstu_is_guest_v1';
   static const _keyGuestGroupTitle = 'bmstu_guest_group_title_v1';
   static const _keyGuestGroupUuid = 'bmstu_guest_group_uuid_v1';
@@ -142,7 +143,7 @@ class AuthProvider with ChangeNotifier {
       }
 
       // 2. Check if we have a cached user profile
-      final cachedProfileJson = prefs.getString(cachedProfileKey);
+      final cachedProfileJson = await CacheStore.instance.read(cachedProfileKey);
       if (cachedProfileJson != null && cachedProfileJson.isNotEmpty) {
         try {
           final decoded = jsonDecode(cachedProfileJson) as Map<String, dynamic>;
@@ -233,7 +234,7 @@ class AuthProvider with ChangeNotifier {
         _sessionGeneration++;
         await _cacheProfile(profile);
         notifyListeners();
-        debugPrint('[AuthProvider] Silent relogin succeeded for ${profile.fullName}');
+        debugPrint('[AuthProvider] Silent relogin succeeded');
         return true;
       }
     } on BmstuNetworkException catch (e) {
@@ -256,8 +257,7 @@ class AuthProvider with ChangeNotifier {
 
   Future<void> _cacheProfile(UserProfile profile) async {
     try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString(cachedProfileKey, jsonEncode(profile.toJson()));
+      await CacheStore.instance.write(cachedProfileKey, jsonEncode(profile.toJson()));
     } catch (e) {
       debugPrint('[AuthProvider] Failed to cache profile: $e');
     }
@@ -289,9 +289,8 @@ class AuthProvider with ChangeNotifier {
 
         // Save cached profile and clear guest flag
         try {
-          final prefs = await SharedPreferences.getInstance();
-          await prefs.setString(cachedProfileKey, jsonEncode(profile.toJson()));
-          await prefs.setBool(_keyIsGuest, false);
+          await CacheStore.instance.write(cachedProfileKey, jsonEncode(profile.toJson()));
+          await (await SharedPreferences.getInstance()).setBool(_keyIsGuest, false);
         } catch (e) {
           debugPrint('[AuthProvider] Failed to cache profile after login: $e');
         }
@@ -333,7 +332,7 @@ class AuthProvider with ChangeNotifier {
       await prefs.setBool(_keyIsGuest, true);
       await prefs.setString(_keyGuestGroupTitle, _guestGroupTitle);
       await prefs.setString(_keyGuestGroupUuid, _guestGroupUuid);
-      await prefs.remove(cachedProfileKey);
+      await CacheStore.instance.remove(cachedProfileKey);
     } catch (e) {
       debugPrint('[AuthProvider] Failed to save guest mode: $e');
     }
@@ -359,7 +358,7 @@ class AuthProvider with ChangeNotifier {
     }
     try {
       final prefs = await SharedPreferences.getInstance();
-      await prefs.remove(cachedProfileKey);
+      await CacheStore.instance.remove(cachedProfileKey);
       await prefs.remove(_keyIsGuest);
       await prefs.remove(_keyGuestGroupTitle);
       await prefs.remove(_keyGuestGroupUuid);
